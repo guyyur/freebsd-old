@@ -140,7 +140,6 @@ static void nd6_llinfo_settimer_locked(struct llentry *, long);
 static void clear_llinfo_pqueue(struct llentry *);
 static int nd6_resolve_slow(struct ifnet *, int, struct mbuf *,
     const struct sockaddr_in6 *, u_char *, uint32_t *, struct llentry **);
-static int nd6_need_cache(struct ifnet *);
 
 VNET_DEFINE_STATIC(struct callout, nd6_slowtimo_ch);
 #define	V_nd6_slowtimo_ch		VNET(nd6_slowtimo_ch)
@@ -2487,7 +2486,7 @@ nd6_flush_holdchain(struct ifnet *ifp, struct mbuf *chain,
 	return (error);
 }
 
-static int
+int
 nd6_need_cache(struct ifnet *ifp)
 {
 	/*
