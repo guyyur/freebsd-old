@@ -1368,6 +1368,31 @@ restart:
 		return (1);
 	}
 
+	/*
+	 * Even if the address matches none of our addresses, it might be
+	 * in a a connected route.
+	 */
+	bzero(&info, sizeof(info));
+
+	/*
+	 * We only need to check all FIBs if add_addr_allfibs
+	 * is unset. If set, checking any FIB will suffice.
+	 */
+	fibnum = V_rt_add_addr_allfibs ? rt_numfibs - 1 : 0;
+	for (; fibnum < rt_numfibs; fibnum++) {
+		error = rib_lookup_info(fibnum, (const struct sockaddr *)addr,
+					0, 0, &info);
+
+		if (error == 0) {
+			if ((info.rti_flags & RTF_CONNECTED) &&
+			    (info.rti_ifp == ifp ||
+			     info.rti_ifp->if_bridge == ifp->if_bridge))
+				return (1);
+
+			break;
+		}
+	}
+
 	return (0);
 }
 
