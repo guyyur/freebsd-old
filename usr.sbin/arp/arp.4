@@ -65,16 +65,9 @@ for a non-responding destination host, and
 .Er EHOSTUNREACH
 for a non-responding router.
 .Pp
-The ARP cache is stored in the system routing table as
-dynamically-created host routes.
-The route to a directly-attached Ethernet network is installed as a
-.Dq cloning
-route (one with the
-.Li RTF_CLONING
-flag set),
-causing routes to individual hosts on that network to be created on
-demand.
-These routes time out periodically (normally 20 minutes after validated;
+Each ARP cache entry is stored in a network interface which a response
+of ARP comes in.
+ARP cache entires time out periodically (normally 20 minutes after validated;
 entries are not validated when not in use).
 .Pp
 ARP entries may be added, deleted or changed with the

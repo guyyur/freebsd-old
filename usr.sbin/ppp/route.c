@@ -159,6 +159,7 @@ static struct bits {
   { RTF_DYNAMIC, 'D' },
   { RTF_MODIFIED, 'M' },
   { RTF_DONE, 'd' },
+  { RTF_CONNECTED, 'C' },
   { RTF_XRESOLVE, 'X' },
   { RTF_STATIC, 'S' },
   { RTF_PROTO1, '1' },
@@ -166,9 +167,6 @@ static struct bits {
   { RTF_BLACKHOLE, 'B' },
 #ifdef RTF_LLINFO
   { RTF_LLINFO, 'L' },
-#endif
-#ifdef RTF_CLONING  
-  { RTF_CLONING, 'C' },
 #endif
 #ifdef RTF_PROTO3
   { RTF_PROTO3, '3' },

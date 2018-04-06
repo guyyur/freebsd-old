@@ -84,6 +84,7 @@ static struct bits {
 	{ RTF_DYNAMIC,	'D', "dynamic" },
 	{ RTF_MODIFIED,	'M', "modified" },
 	{ RTF_DONE,	'd', "done" }, /* Completed -- for routing msgs only */
+	{ RTF_CONNECTED,'C', "connected" },
 	{ RTF_XRESOLVE,	'X', "xresolve" },
 	{ RTF_STATIC,	'S', "static" },
 	{ RTF_PROTO1,	'1', "proto1" },

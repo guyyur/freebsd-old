@@ -307,14 +307,16 @@ when sending to destinations matched by the routes.
 These flags may be set (or sometimes cleared)
 by indicating the following corresponding modifiers:
 .Bd -literal
--xresolve  RTF_XRESOLVE   - emit mesg on use (for external lookup)
--iface    ~RTF_GATEWAY    - destination is directly reachable
--static    RTF_STATIC     - manually added route
--nostatic ~RTF_STATIC     - pretend route added by kernel or daemon
--reject    RTF_REJECT     - emit an ICMP unreachable when matched
--blackhole RTF_BLACKHOLE  - silently discard pkts (during updates)
--proto1    RTF_PROTO1     - set protocol specific routing flag #1
--proto2    RTF_PROTO2     - set protocol specific routing flag #2
+-xresolve     RTF_XRESOLVE   - emit mesg on use (for external lookup)
+-iface       ~RTF_GATEWAY    - destination is directly reachable
+-static       RTF_STATIC     - manually added route
+-nostatic    ~RTF_STATIC     - pretend route added by kernel or daemon
+-reject       RTF_REJECT     - emit an ICMP unreachable when matched
+-blackhole    RTF_BLACKHOLE  - silently discard pkts (during updates)
+-connected    RTF_CONNECTED  - treat as a connected route
+-noconnected ~RTF_CONNECTED  - stop treating a connected route
+-proto1       RTF_PROTO1     - set protocol specific routing flag #1
+-proto2       RTF_PROTO2     - set protocol specific routing flag #2
 .Ed
 .Pp
 The optional modifiers

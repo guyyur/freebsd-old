@@ -2183,7 +2183,10 @@ ifrt(struct ifc *ifcp, int again)
 			rrt->rrt_info.rip6_tag = htons(routetag & 0xffff);
 			rrt->rrt_info.rip6_metric = 1 + ifcp->ifc_metric;
 			rrt->rrt_info.rip6_plen = ifac->ifac_plen;
-			rrt->rrt_flags = RTF_HOST;
+			if (ifac->ifac_plen == 128)
+				rrt->rrt_flags = RTF_HOST;
+			else
+				rrt->rrt_flags = RTF_CONNECTED;
 			rrt->rrt_rflags |= RRTF_CHANGED;
 			applyplen(&rrt->rrt_info.rip6_dest, ifac->ifac_plen);
 			memset(&rrt->rrt_gw, 0, sizeof(struct in6_addr));
@@ -2501,6 +2504,9 @@ do { \
 #ifdef	RTF_MASK
 	RTFLAG("m", RTF_MASK);
 #endif
+#ifdef RTF_CONNECTED
+	RTFLAG("C", RTF_CONNECTED);
+#endif
 #ifdef RTF_CLONED
 	RTFLAG("c", RTF_CLONED);
 #endif
@@ -2640,7 +2646,7 @@ rt_entry(struct rt_msghdr *rtm, int again)
 
 	sin6_dst = sin6_gw = sin6_mask = sin6_genmask = sin6_ifp = 0;
 	if ((rtm->rtm_flags & RTF_UP) == 0 || rtm->rtm_flags &
-		(RTF_XRESOLVE|RTF_BLACKHOLE)) {
+		(RTF_CONNECTED|RTF_XRESOLVE|RTF_BLACKHOLE)) {
 		return;		/* not interested in the link route */
 	}
 	/* do not look at cloned routes */
