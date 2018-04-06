@@ -1419,6 +1419,8 @@ arp_ifinit(struct ifnet *ifp, struct ifaddr *ifa)
 	if (ifa->ifa_carp != NULL)
 		return;
 
+	ifa->ifa_flags |= RTF_CONNECTED;
+
 	dst = ifa->ifa_addr;
 	dst_in = (const struct sockaddr_in *)dst;
 

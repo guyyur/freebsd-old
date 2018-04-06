@@ -7,6 +7,7 @@ add
 blackhole
 change
 cloning
+connected
 del
 delete
 dst
@@ -34,6 +35,7 @@ monitor
 mtu
 net
 netmask
+noconnected
 nostatic
 nostick
 osi
