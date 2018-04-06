@@ -871,6 +871,12 @@ newroute(int argc, char **argv)
 			case K_PROXY:
 				nrflags |= F_PROXY;
 				break;
+			case K_CONNECTED:
+				flags |= RTF_CONNECTED;
+				break;
+			case K_NOCONNECTED:
+				flags &= ~RTF_CONNECTED;
+				break;
 			case K_XRESOLVE:
 				flags |= RTF_XRESOLVE;
 				break;
@@ -1612,7 +1618,7 @@ static const char metricnames[] =
     "\1mtu";
 static const char routeflags[] =
     "\1UP\2GATEWAY\3HOST\4REJECT\5DYNAMIC\6MODIFIED\7DONE"
-    "\012XRESOLVE\013LLINFO\014STATIC\015BLACKHOLE"
+    "\011CONNECTED\012XRESOLVE\013LLINFO\014STATIC\015BLACKHOLE"
     "\017PROTO2\020PROTO1\021PRCLONING\022WASCLONED\023PROTO3"
     "\024FIXEDMTU\025PINNED\026LOCAL\027BROADCAST\030MULTICAST\035STICKY";
 static const char ifnetflags[] =

@@ -143,7 +143,7 @@ VNET_DECLARE(u_int, rt_add_addr_allfibs); /* Announce interfaces to all fibs */
 #define	RTF_MODIFIED	0x20		/* modified dynamically (by redirect) */
 #define RTF_DONE	0x40		/* message confirmed */
 /*			0x80		   unused, was RTF_DELCLONE */
-/*			0x100		   unused, was RTF_CLONING */
+#define RTF_CONNECTED	0x100		/* hosts on this route are neighbours */
 #define RTF_XRESOLVE	0x200		/* external daemon resolves name */
 #define RTF_LLINFO	0x400		/* DEPRECATED - exists ONLY for backward 
 					   compatibility */
@@ -171,7 +171,7 @@ VNET_DECLARE(u_int, rt_add_addr_allfibs); /* Announce interfaces to all fibs */
 /* Mask of RTF flags that are allowed to be modified by RTM_CHANGE. */
 #define RTF_FMASK	\
 	(RTF_PROTO1 | RTF_PROTO2 | RTF_PROTO3 | RTF_BLACKHOLE | \
-	 RTF_REJECT | RTF_STATIC | RTF_STICKY)
+	 RTF_REJECT | RTF_STATIC | RTF_STICKY | RTF_CONNECTED)
 
 /*
  * fib_ nexthop API flags.
