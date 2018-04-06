@@ -2551,6 +2551,7 @@ nd6_add_ifa_lle(struct in6_ifaddr *ia)
 		return (0);
 
 	ia->ia_ifa.ifa_rtrequest = nd6_rtrequest;
+	ia->ia_ifa.ifa_flags |= RTF_CONNECTED;
 	dst = (struct sockaddr *)&ia->ia_addr;
 	ln = lltable_alloc_entry(LLTABLE6(ifp), LLE_IFADDR, dst);
 	if (ln == NULL)
