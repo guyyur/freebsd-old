@@ -1,0 +1,178 @@
+# based on: releng/11.2/sys/amd64/conf/GENERIC
+
+cpu		HAMMER
+ident		MYHW
+
+makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
+makeoptions	WITH_CTF=1		# Run ctfconvert(1) for DTrace support
+
+options 	SCHED_ULE		# ULE scheduler
+options 	PREEMPTION		# Enable kernel thread preemption
+options 	INET			# InterNETworking
+options 	INET6			# IPv6 communications protocols
+options 	TCP_OFFLOAD		# TCP offload
+options 	SCTP			# Stream Control Transmission Protocol
+options 	FFS			# Berkeley Fast Filesystem
+options 	SOFTUPDATES		# Enable FFS soft updates support
+options 	UFS_ACL			# Support for access control lists
+options 	UFS_DIRHASH		# Improve performance on big directories
+options 	NFSCL			# Network Filesystem Client
+options 	NFSD			# Network Filesystem Server
+options 	NFSLOCKD		# Network Lock Manager
+options 	MSDOSFS			# MSDOS Filesystem
+options 	PROCFS			# Process filesystem (requires PSEUDOFS)
+options 	PSEUDOFS		# Pseudo-filesystem framework
+options 	GEOM_PART_GPT		# GUID Partition Tables.
+options 	GEOM_LABEL		# Provides labelization
+# options 	COMPAT_FREEBSD32	# Compatible with i386 binaries
+options 	COMPAT_FREEBSD10	# Compatible with FreeBSD10
+options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI
+options 	KTRACE			# ktrace(1) support
+options 	STACK			# stack(9) support
+options 	SYSVSHM			# SYSV-style shared memory
+options 	SYSVMSG			# SYSV-style message queues
+options 	SYSVSEM			# SYSV-style semaphores
+options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003_1B real-time extensions
+options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
+options 	KBD_INSTALL_CDEV	# install a CDEV entry in /dev
+options 	HWPMC_HOOKS		# Necessary kernel hooks for hwpmc(4)
+options 	AUDIT			# Security event auditing
+options 	CAPABILITY_MODE		# Capsicum capability mode
+options 	CAPABILITIES		# Capsicum capabilities
+options 	MAC			# TrustedBSD MAC Framework
+options 	KDTRACE_FRAME		# Ensure frames are compiled in
+options 	KDTRACE_HOOKS		# Kernel DTrace hooks
+options 	DDB_CTF			# Kernel ELF linker loads CTF data
+# options 	INCLUDE_CONFIG_FILE	# Include this file in kernel
+# options 	RACCT			# Resource accounting framework
+# options 	RACCT_DEFAULT_TO_DISABLED # Set kern.racct.enable=0 by default
+# options 	RCTL			# Resource limits
+
+# Debugging support.  Always need this:
+options 	KDB			# Enable kernel debugger support.
+options 	KDB_TRACE		# Print a stack trace for a panic.
+
+# Make an SMP-capable kernel by default
+options 	SMP			# Symmetric MultiProcessor Kernel
+options 	EARLY_AP_STARTUP
+
+# CPU frequency control
+device		cpufreq
+
+# Bus support.
+device		acpi
+options 	ACPI_DMAR
+device		pci
+options 	PCI_HP			# PCI-Express native HotPlug
+# options 	PCI_IOV			# PCI SR-IOV support
+
+# ATA controllers
+device		ahci			# AHCI-compatible SATA controllers
+
+# ATA/SCSI peripherals
+device		scbus			# SCSI bus (required for ATA/SCSI)
+device		da			# Direct Access (disks)
+device		cd			# CD
+device		pass			# Passthrough device (direct ATA/SCSI access)
+
+# NVM Express (NVMe) support
+# device		nvme			# base NVMe driver
+# device		nvd			# expose NVMe namespaces as disks, depends on nvme
+
+device		kbdmux			# keyboard multiplexer
+
+device		vga			# VGA video card driver
+options 	VESA			# Add support for VESA BIOS Extensions (VBE)
+
+device		splash			# Splash screen and screen saver support
+
+# syscons is the default console driver, resembling an SCO console
+device		sc
+options 	SC_PIXEL_MODE		# add support for the raster text mode
+
+# vt is the new video console driver
+device		vt
+device		vt_vga
+device		vt_efifb
+
+device		agp			# support several AGP chipsets
+
+# Serial (COM) ports
+device		uart			# Generic UART driver
+
+# PCI Ethernet NICs that use the common MII bus controller code.
+# NOTE: Be sure to keep the 'device miibus' line in order to use these NICs!
+device		miibus			# MII bus support
+device		age			# Attansic/Atheros L1 Gigabit Ethernet
+device		re			# RealTek 8139C+/8169/8169S/8110S
+device		sge			# Silicon Integrated Systems SiS190/191
+
+# Pseudo devices.
+device		loop			# Network loopback
+device		random			# Entropy device
+device		rdrand_rng		# Intel Bull Mountain RNG
+device		ether			# Ethernet support
+device		vlan			# 802.1Q VLAN support
+device		md			# Memory "disks"
+device		firmware		# firmware assist module
+
+# The `bpf' device enables the Berkeley Packet Filter.
+# Be aware of the administrative consequences of enabling this!
+# Note that 'bpf' is required for DHCP.
+device		bpf			# Berkeley packet filter
+
+# USB support
+options 	USB_DEBUG		# enable debug msgs
+device		uhci			# UHCI PCI->USB interface
+device		ohci			# OHCI PCI->USB interface
+device		ehci			# EHCI PCI->USB interface (USB 2.0)
+device		xhci			# XHCI PCI->USB interface (USB 3.0)
+device		usb			# USB Bus (required)
+device		ukbd			# Keyboard
+device		umass			# Disks/Mass storage - Requires scbus and da
+
+# Sound support
+device		sound			# Generic sound driver (required)
+device		snd_hda			# Intel High Definition Audio
+device		snd_ich			# Intel, NVidia and other ICH AC'97 Audio
+
+# MMC/SD
+# device		mmc			# MMC/SD bus
+# device		mmcsd			# MMC/SD memory card
+# device		sdhci			# Generic PCI SD Host Controller
+
+#
+makeoptions	MODULES_OVERRIDE="cd9660 cd9660_iconv cpuctl drm/drm drm/sis drm2/drm2 drm2/i915kms drm2/radeonkms drm2/radeonkmsfw dtrace em ext2fs fdescfs fuse geom/geom_nop hwpmc i2c/if_ic i2c/iic i2c/iicbb i2c/iicbus imgact_binmisc krpc ksyms libiconv libmchain mqueue msdosfs_iconv netgraph nfscl nfsd nmdm nvram opensolaris rc4 smbfs snp udf udf_iconv unionfs usb/rum usb/run usb/runfw usb/uchcom usb/ucom usb/uftdi usb/ums usb/uplcom usb/uslcom vkbd wlan wlan_acl wlan_amrr wlan_ccmp wlan_rssadapt wlan_tkip wlan_wep wlan_xauth zlib"
+
+options 	NULLFS			# NULL filesystem
+options 	TMPFS			# TMP filesystem
+
+options 	TEKEN_UTF8		# UTF-8 output handling
+
+# device	nvram			# Access to rtc cmos via /dev/nvram
+
+# device	cpuctl			# CPU control pseudo-device.
+# device	hwpmc			# in-CPU performance monitoring counters
+
+# Temperature sensors
+device		coretemp		# on-die sensor on Intel Core and newer CPUs
+device		amdtemp			# on-die sensor on AMD K8/K10/K11 CPUs
+
+device		aibs			# ACPI ASOC ATK0110 ASUSTeK AI Booster (voltage, temperature and fan sensors)
+
+device		atacore			# Core ATA functionality
+device		atapci			# PCI bus support; only generic chipset support
+device		ataintel		# Intel
+device		atajmicron		# JMicron
+device		atasis			# Silicon Integrated Systems Corp.(SiS)
+
+# SMB bus
+device		smbus			# Bus support, required for smb below.
+device		smb			# standard I/O through /dev/smb*
+device		ichsmb			# Intel ICH SMBus controller chips (82801AA, 82801AB, 82801BA)
+device		intpm			# Intel PIIX4 (82371AB, 82443MX) Power Management Unit
+
+# Hardware watchdog timers
+device		ichwd			# Intel ICH watchdog timer
+
+device		uhid			# "Human Interface Devices"
