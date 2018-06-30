@@ -272,11 +272,11 @@ xterm-basic|modern xterm common:\
 # is widely used for a variety of incompatible terminal emulations including
 # color_xterm and rxvt.
 xterm|X11 terminal emulator:\
+	:te=\E[?1049l:ti=\E[?1049h:\
 	:tc=xterm-new:
 #
-# Add the capability to "clear the screen" after exiting vi, more/less, etc.
-xterm-clear:\
-	:te=\E[?1049l:ti=\E[?1049h:\
+# Entry without the capability to "clear the screen" after exiting vi, more/less, etc.
+xterm1:\
 	:tc=xterm-new:
 #
 # This should work for the commonly used "color xterm" variations (XFree86
