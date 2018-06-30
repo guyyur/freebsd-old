@@ -364,7 +364,7 @@ cm_bin2pl(char *str, struct ctrl_msg_pl *cp)
 		}
 		memcpy(cp->cp_ifname, p, len);
 		cp->cp_ifname[len] = '\0';
-		p += len;
+		p += (len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
 	}
 
 	lenp = (size_t *)p;
@@ -379,7 +379,7 @@ cm_bin2pl(char *str, struct ctrl_msg_pl *cp)
 		}
 		memcpy(cp->cp_key, p, len);
 		cp->cp_key[len] = '\0';
-		p += len;
+		p += (len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
 	}
 
 	lenp = (size_t *)p;
@@ -404,20 +404,26 @@ cm_bin2pl(char *str, struct ctrl_msg_pl *cp)
 size_t
 cm_pl2bin(char *str, struct ctrl_msg_pl *cp)
 {
-	size_t len;
+	size_t len, ifname_len, key_len, val_len;
 	size_t *lenp;
 	char *p;
 	struct ctrl_msg_hdr *cm;
 
 	len = sizeof(size_t);
-	if (cp->cp_ifname != NULL)
-		len += strlen(cp->cp_ifname);
+	if (cp->cp_ifname != NULL) {
+		ifname_len = strlen(cp->cp_ifname);
+		len += (ifname_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
+	}
 	len += sizeof(size_t);
-	if (cp->cp_key != NULL)
-		len += strlen(cp->cp_key);
+	if (cp->cp_key != NULL) {
+		key_len = strlen(cp->cp_key);
+		len += (key_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
+	}
 	len += sizeof(size_t);
-	if (cp->cp_val != NULL && cp->cp_val_len > 0)
-		len += cp->cp_val_len;
+	if (cp->cp_val != NULL && cp->cp_val_len > 0) {
+		val_len = cp->cp_val_len;
+		len += (val_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
+	}
 
 	if (len > CM_MSG_MAXLEN - sizeof(*cm)) {
 		syslog(LOG_DEBUG, "<%s> msg too long (len=%zu)",
@@ -428,36 +434,36 @@ cm_pl2bin(char *str, struct ctrl_msg_pl *cp)
 	memset(str, 0, len);
 	p = str;
 	lenp = (size_t *)p;
-	
+
 	if (cp->cp_ifname != NULL) {
-		*lenp++ = strlen(cp->cp_ifname);
+		*lenp++ = ifname_len;
 		p = (char *)lenp;
-		memcpy(p, cp->cp_ifname, strlen(cp->cp_ifname));
-		p += strlen(cp->cp_ifname);
+		memcpy(p, cp->cp_ifname, ifname_len);
+		p += (ifname_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
 	} else {
-		*lenp++ = '\0';
+		*lenp++ = 0;
 		p = (char *)lenp;
 	}
 
 	lenp = (size_t *)p;
 	if (cp->cp_key != NULL) {
-		*lenp++ = strlen(cp->cp_key);
+		*lenp++ = key_len;
 		p = (char *)lenp;
-		memcpy(p, cp->cp_key, strlen(cp->cp_key));
-		p += strlen(cp->cp_key);
+		memcpy(p, cp->cp_key, key_len);
+		p += (key_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
 	} else {
-		*lenp++ = '\0';
+		*lenp++ = 0;
 		p = (char *)lenp;
 	}
 
 	lenp = (size_t *)p;
 	if (cp->cp_val != NULL && cp->cp_val_len > 0) {
-		*lenp++ = cp->cp_val_len;
+		*lenp++ = val_len;
 		p = (char *)lenp;
-		memcpy(p, cp->cp_val, cp->cp_val_len);
-		p += cp->cp_val_len;
+		memcpy(p, cp->cp_val, val_len);
+		p += (val_len + sizeof(size_t)) & ~(sizeof(size_t) - 1);
 	} else {
-		*lenp++ = '\0';
+		*lenp++ = 0;
 		p = (char *)lenp;
 	}
 
