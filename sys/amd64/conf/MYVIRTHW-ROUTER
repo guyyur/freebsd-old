@@ -1,0 +1,56 @@
+
+include 	MYVIRTHW
+
+ident		MYVIRTHW-ROUTER
+
+nomakeoptions	MODULES_OVERRIDE
+makeoptions	MODULES_OVERRIDE+="cd9660 cd9660_iconv"
+makeoptions	MODULES_OVERRIDE+="fdescfs"
+makeoptions	MODULES_OVERRIDE+="krpc"
+makeoptions	MODULES_OVERRIDE+="ksyms"
+makeoptions	MODULES_OVERRIDE+="libiconv"
+makeoptions	MODULES_OVERRIDE+="netgraph"
+makeoptions	MODULES_OVERRIDE+="nfscl nfsd"
+makeoptions	MODULES_OVERRIDE+="nvram"
+makeoptions	MODULES_OVERRIDE+="rc4"
+makeoptions	MODULES_OVERRIDE+="unionfs"
+makeoptions	MODULES_OVERRIDE+="zlib"
+
+nooptions 	CD9660
+nooptions 	CD9660_ICONV
+
+nooptions 	HWPMC_HOOKS
+
+nooptions 	LIBICONV
+
+nodevice	atacore
+nodevice	atapci
+nodevice	ataintel
+
+nodevice	mpt
+
+nodevice	psm
+
+nooptions 	USB_DEBUG
+nodevice	uhci
+nodevice	ohci
+nodevice	ehci
+nodevice	xhci
+nodevice	usb
+
+# evdev interface
+nooptions 	EVDEV_SUPPORT
+nodevice	evdev
+nodevice	uinput
+
+# HID support
+nooptions 	HID_DEBUG
+nodevice	hid
+nooptions 	IICHID_SAMPLING
+
+nodevice	sound
+nodevice	snd_hda
+
+# Firewall
+device		pf			# Packet Filter
+device		pflog
