@@ -162,7 +162,7 @@ clock_ct_to_ts(const struct clocktime *ct, struct timespec *ts)
 	/* Sanity checks. */
 	if (ct->mon < 1 || ct->mon > 12 || ct->day < 1 ||
 	    ct->day > days_in_month(year, ct->mon) ||
-	    ct->hour > 23 ||  ct->min > 59 || ct->sec > 59 || year < 1970 ||
+	    ct->hour > 23 ||  ct->min > 59 || ct->sec > 59 || year < 2017 ||
 	    (sizeof(time_t) == 4 && year > 2037)) {	/* time_t overflow */
 		if (ct_debug)
 			printf(" = EINVAL\n");
