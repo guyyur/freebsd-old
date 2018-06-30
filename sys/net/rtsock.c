@@ -637,6 +637,7 @@ route_output(struct mbuf *m, struct socket *so, ...)
 	 */
 	if (info.rti_info[RTAX_GATEWAY] != NULL &&
 	    info.rti_info[RTAX_GATEWAY]->sa_family != AF_LINK) {
+#if 0
 		struct rt_addrinfo ginfo;
 		struct sockaddr *gdst;
 
@@ -665,6 +666,31 @@ route_output(struct mbuf *m, struct socket *so, ...)
 			}
 			rib_free_info(&ginfo);
 		}
+#else
+		struct route gw_ro;
+
+		bzero(&gw_ro, sizeof(gw_ro));
+		gw_ro.ro_dst = *info.rti_info[RTAX_GATEWAY];
+		rtalloc_ign_fib(&gw_ro, 0, fibnum);
+		/*
+		 * A host route through the loopback interface is
+		 * installed for each interface adddress. In pre 8.0
+		 * releases the interface address of a PPP link type
+		 * is not reachable locally. This behavior is fixed as
+		 * part of the new L2/L3 redesign and rewrite work. The
+		 * signature of this interface address route is the
+		 * AF_LINK sa_family type of the rt_gateway, and the
+		 * rt_ifp has the IFF_LOOPBACK flag set.
+		 */
+		if (gw_ro.ro_rt != NULL &&
+		    gw_ro.ro_rt->rt_gateway->sa_family == AF_LINK &&
+		    gw_ro.ro_rt->rt_ifp->if_flags & IFF_LOOPBACK) {
+			info.rti_flags &= ~RTF_GATEWAY;
+			info.rti_flags |= RTF_GWFLAG_COMPAT;
+		}
+		if (gw_ro.ro_rt != NULL)
+			RTFREE(gw_ro.ro_rt);
+#endif
 	}
 
 	switch (rtm->rtm_type) {
