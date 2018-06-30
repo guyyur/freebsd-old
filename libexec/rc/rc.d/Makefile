@@ -48,10 +48,6 @@ CONFS=	DAEMON \
 	hostname \
 	iovctl \
 	ip6addrctl \
-	ipfilter \
-	ipfs \
-	ipmon \
-	ipnat \
 	ipsec \
 	${_kadmind} \
 	${_kdc} \
@@ -71,8 +67,6 @@ CONFS=	DAEMON \
 	mdconfig \
 	mdconfig2 \
 	mountd \
-	msgs \
-	natd \
 	netif \
 	netoptions \
 	netwait \
@@ -81,18 +75,12 @@ CONFS=	DAEMON \
 	nfscbd \
 	nfsd \
 	nfsuserd \
-	nisdomain \
 	${_nscd} \
 	nsswitch \
 	ntpdate \
 	${_opensm} \
-	pf \
-	pflog \
-	pfsync \
-	ppp \
 	pppoed \
 	pwcheck \
-	quota \
 	random \
 	rarpd \
 	rctl \
@@ -124,6 +112,7 @@ CONFS=	DAEMON \
 	watchdogd
 
 .if ${MK_NIS} != "no"
+CONFS+=	nisdomain
 CONFS+=	ypbind \
 	ypldap \
 	yppasswdd \
@@ -211,11 +200,19 @@ HASTPACKAGE=	hast
 CONFS+=		inetd
 .endif
 
+.if ${MK_IPFILTER} != "no"
+CONFS+=		ipfilter
+CONFS+=		ipfs
+CONFS+=		ipmon
+CONFS+=		ipnat
+.endif
+
 .if ${MK_IPFW} != "no"
 CONFS+=		ipfw
 .if ${MK_NETGRAPH} != "no"
 CONFS+=		ipfw_netflow
 .endif
+CONFS+=		natd
 .endif
 
 .if ${MK_ISCSI} != "no"
@@ -252,6 +249,7 @@ VAR_HEMIDAL_MODE=	700
 .endif
 
 .if ${MK_MAIL} != "no"
+CONFS+=		msgs
 CONFS+=		othermta
 .endif
 
@@ -279,6 +277,17 @@ SSHPACKAGE=	ssh
 
 .if ${MK_PF} != "no"
 CONFS+=		ftp-proxy
+CONFS+=		pf
+CONFS+=		pflog
+CONFS+=		pfsync
+.endif
+
+.if ${MK_PPP} != "no"
+CONFS+=		ppp
+.endif
+
+.if ${MK_QUOTAS} != "no"
+CONFS+=		quota
 .endif
 
 .if ${MK_ROUTED} != "no"
