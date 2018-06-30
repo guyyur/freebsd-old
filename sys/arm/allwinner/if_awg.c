@@ -46,6 +46,7 @@ __FBSDID("$FreeBSD$");
 #include <sys/module.h>
 #include <sys/taskqueue.h>
 #include <sys/gpio.h>
+#include <sys/sysctl.h>
 
 #include <net/bpf.h>
 #include <net/if.h>
@@ -172,6 +173,8 @@ struct awg_txring {
 	struct awg_bufmap	buf_map[TX_DESC_COUNT];
 	u_int			cur, next, queued;
 	u_int			segs;
+	u_int			collapse_failures;
+	u_int			encap_failures;
 };
 
 struct awg_rxring {
@@ -419,7 +422,7 @@ awg_encap(struct awg_softc *sc, struct mbuf **mp)
 	if (error == EFBIG) {
 		m = m_collapse(m, M_NOWAIT, TX_MAX_SEGS);
 		if (m == NULL) {
-			device_printf(sc->dev, "awg_encap: m_collapse failed\n");
+			sc->tx.collapse_failures++;
 			m_freem(*mp);
 			*mp = NULL;
 			return (ENOMEM);
@@ -433,10 +436,11 @@ awg_encap(struct awg_softc *sc, struct mbuf **mp)
 		}
 	}
 	if (error != 0) {
-		device_printf(sc->dev, "awg_encap: bus_dmamap_load_mbuf_sg failed\n");
+		sc->tx.encap_failures++;
 		return (error);
 	}
 	if (nsegs == 0) {
+		sc->tx.encap_failures++;
 		m_freem(*mp);
 		*mp = NULL;
 		return (EIO);
@@ -829,6 +833,15 @@ awg_stop(struct awg_softc *sc)
 
 	callout_stop(&sc->stat_ch);
 
+	printf("mydbg: stop: queued = %u, next = %u, cur = %u\n", sc->tx.queued, sc->tx.next, sc->tx.cur);
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_CTL_0", RD4(sc, EMAC_TX_CTL_0));
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_CTL_1", RD4(sc, EMAC_TX_CTL_1));
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_DMA_LIST", RD4(sc, EMAC_TX_DMA_LIST));
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_DMA_STA", RD4(sc, EMAC_TX_DMA_STA));
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_DMA_CUR_DESC", RD4(sc, EMAC_TX_DMA_CUR_DESC));
+	printf("mydbg: %-20s %08x\n", "EMAC_TX_DMA_CUR_BUF", RD4(sc, EMAC_TX_DMA_CUR_BUF));
+	printf("mydbg: %-20s %08x\n", "EMAC_INT_STA", RD4(sc, EMAC_INT_STA));
+
 	/* Stop transmit DMA and flush data in the TX FIFO */
 	val = RD4(sc, EMAC_TX_CTL_1);
 	val &= ~TX_DMA_EN;
@@ -858,6 +871,8 @@ awg_stop(struct awg_softc *sc)
 
 	/* Finish handling transmitted buffers */
 	awg_txeof(sc);
+
+	printf("mydbg: after freeing handled buffers, queued = %u\n", sc->tx.queued);
 
 	/* Release any untransmitted buffers. */
 	for (i = sc->tx.next; sc->tx.queued > 0; i = TX_NEXT(i)) {
@@ -1852,6 +1867,34 @@ awg_setup_dma(device_t dev)
 	return (0);
 }
 
+static void
+awg_add_sysctls(device_t dev)
+{
+	struct awg_softc *sc;
+	struct sysctl_ctx_list *ctx;
+	struct sysctl_oid_list *parent, *tx_parent;
+	struct sysctl_oid *node;
+
+	sc = device_get_softc(dev);
+
+	ctx = device_get_sysctl_ctx(dev);
+	parent = SYSCTL_CHILDREN(device_get_sysctl_tree(dev));
+
+	node = SYSCTL_ADD_NODE(ctx, parent, OID_AUTO, "tx",
+	    CTLFLAG_RD, NULL, "AWG TX Statistics");
+	tx_parent = SYSCTL_CHILDREN(node);
+
+	SYSCTL_ADD_UINT(ctx, tx_parent, OID_AUTO, "queued",
+	    CTLFLAG_RD, &sc->tx.queued, 0,
+	    "Number of queued mbufs");
+	SYSCTL_ADD_UINT(ctx, tx_parent, OID_AUTO, "collapse_failures",
+	    CTLFLAG_RD, &sc->tx.collapse_failures, 0,
+	    "Number of tx m_collapse failures");
+	SYSCTL_ADD_UINT(ctx, tx_parent, OID_AUTO, "encap_failures",
+	    CTLFLAG_RD, &sc->tx.collapse_failures, 0,
+	    "Number of tx encap failures");
+}
+
 static int
 awg_probe(device_t dev)
 {
@@ -1939,6 +1982,8 @@ awg_attach(device_t dev)
 
 	/* Attach ethernet interface */
 	ether_ifattach(sc->ifp, eaddr);
+
+	awg_add_sysctls(dev);
 
 	return (0);
 }
