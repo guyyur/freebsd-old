@@ -1,0 +1,265 @@
+# based on: head/sys/arm64/conf/GENERIC b5346307ed34f9a7cb8c37b495283df0bdba852a
+
+cpu		ARM64
+ident		MYHW
+
+makeoptions	DEBUG=-g		# Build kernel with gdb(1) debug symbols
+makeoptions	WITH_CTF=1		# Run ctfconvert(1) for DTrace support
+
+options 	SCHED_ULE		# ULE scheduler
+options 	PREEMPTION		# Enable kernel thread preemption
+options 	VIMAGE			# Subsystem virtualization, e.g. VNET
+options 	INET			# InterNETworking
+options 	INET6			# IPv6 communications protocols
+options 	TCP_OFFLOAD		# TCP offload
+# options 	TCP_HHOOK		# hhook(9) framework for TCP
+options		TCP_RFC7413		# TCP Fast Open
+options 	SCTP_SUPPORT		# Allow kldload of SCTP
+options 	FFS			# Berkeley Fast Filesystem
+options 	SOFTUPDATES		# Enable FFS soft updates support
+options 	UFS_ACL			# Support for access control lists
+options 	UFS_DIRHASH		# Improve performance on big directories
+options 	NFSCL			# Network Filesystem Client
+options 	NFSD			# Network Filesystem Server
+options 	NFSLOCKD		# Network Lock Manager
+options 	MSDOSFS			# MSDOS Filesystem
+options 	PROCFS			# Process filesystem (requires PSEUDOFS)
+options 	PSEUDOFS		# Pseudo-filesystem framework
+options 	TMPFS			# Efficient memory filesystem
+options 	GEOM_LABEL		# Provides labelization
+options 	EFIRT			# EFI Runtime Services support
+options 	SCSI_DELAY=5000		# Delay (in ms) before probing SCSI
+options 	KTRACE			# ktrace(1) support
+options 	STACK			# stack(9) support
+options 	SYSVSHM			# SYSV-style shared memory
+options 	SYSVMSG			# SYSV-style message queues
+options 	SYSVSEM			# SYSV-style semaphores
+options 	_KPOSIX_PRIORITY_SCHEDULING # POSIX P1003_1B real-time extensions
+options 	PRINTF_BUFR_SIZE=128	# Prevent printf output being interspersed.
+options 	KBD_INSTALL_CDEV	# install a CDEV entry in /dev
+options 	HWPMC_HOOKS		# Necessary kernel hooks for hwpmc(4)
+options 	AUDIT			# Security event auditing
+options 	CAPABILITY_MODE		# Capsicum capability mode
+options 	CAPABILITIES		# Capsicum capabilities
+options 	MAC			# TrustedBSD MAC Framework
+options 	KDTRACE_FRAME		# Ensure frames are compiled in
+options 	KDTRACE_HOOKS		# Kernel DTrace hooks
+options 	DDB_CTF			# Kernel ELF linker loads CTF data
+options 	VFP			# Floating-point support
+# options 	RACCT			# Resource accounting framework
+# options 	RACCT_DEFAULT_TO_DISABLED # Set kern.racct.enable=0 by default
+# options 	RCTL			# Resource limits
+options 	INTRNG
+options 	PERTHREAD_SSP		# Per-thread SSP canary
+
+# Debugging support.  Always need this:
+options 	KDB			# Enable kernel debugger support.
+options 	KDB_TRACE		# Print a stack trace for a panic.
+
+# Kernel Sanitizers
+#options 	COVERAGE		# Generic kernel coverage. Used by KCOV
+#options 	KCOV			# Kernel Coverage Sanitizer
+# Warning: KUBSAN can result in a kernel too large for loader to load
+#options 	KUBSAN			# Kernel Undefined Behavior Sanitizer
+#options 	KCSAN			# Kernel Concurrency Sanitizer
+
+# Kernel dump features.
+# options 	EKCD			# Support for encrypted kernel dumps
+options 	GZIO			# gzip-compressed kernel and user dumps
+options 	ZSTDIO			# zstd-compressed kernel and user dumps
+# options 	NETDUMP			# netdump(4) client support
+
+# Make an SMP-capable kernel by default
+options 	SMP			# Symmetric MultiProcessor Kernel
+
+# SoC support
+options 	SOC_ALLWINNER_H5
+options 	SOC_BRCM_BCM2838
+options 	SOC_ROCKCHIP_RK3328
+
+# Timer drivers
+device		a10_timer
+
+# CPU frequency control
+device		cpufreq
+
+# Bus drivers
+device		pci
+
+# Block devices
+device		scbus
+device		da
+
+# ATA/SCSI peripherals
+device		pass		# Passthrough device (direct ATA/SCSI access)
+
+# DMA controller
+device		a31_dmac
+
+# GPIO / PINCTRL
+device		aw_gpio		# Allwinner GPIO controller
+device		gpio
+device		gpioled
+device		fdt_pinctrl
+device		gpioregulator
+device		rk_gpio		# RockChip GPIO Controller
+device		rk_pinctrl	# RockChip Pinmux Controller
+
+# I2C
+device		aw_rsb		# Allwinner Reduced Serial Bus
+device		bcm2835_bsc	# Broadcom BCM283x I2C bus
+device		iicbus
+device		iicmux
+device		iic
+device		twsi		# Allwinner I2C controller
+device		rk_i2c		# RockChip I2C controller
+device		sy8106a		# SY8106A Buck Regulator
+
+# Clock and reset controllers
+device		aw_ccu		# Allwinner clock controller
+
+# Interrupt controllers
+device		aw_nmi		# Allwinner NMI support
+device		aw_r_intc	# Allwinner RINTC support
+
+# Real-time clock support
+device		aw_rtc		# Allwinner Real-time Clock
+
+# Crypto accelerators
+device		armv8crypto	# ARMv8 OpenCrypto module
+
+# Watchdog controllers
+device		aw_wdog		# Allwinner Watchdog
+
+# Power management controllers
+# device		axp81x		# X-Powers AXP81x PMIC
+device		rk805		# RockChip RK805 PMIC
+
+# EFUSE
+device		aw_sid		# Allwinner Secure ID EFUSE
+
+# Thermal sensors
+device		aw_thermal	# Allwinner Thermal Sensor Controller
+
+# SPI
+device		spibus
+device		bcm2835_spi	# Broadcom BCM283x SPI bus
+device		rk_spi		# RockChip SPI controller
+
+# PWM
+device		pwm
+device		aw_pwm
+device		rk_pwm
+
+# Console
+# device		vt
+# device		kbdmux
+
+# device		vt_efifb
+
+# EVDEV support
+# device		evdev			# input event device support
+# options		EVDEV_SUPPORT		# evdev support in legacy drivers
+# device		uinput			# install /dev/uinput cdev
+# device		aw_cir
+
+# Serial (COM) ports
+device		uart			# Generic UART driver
+device		uart_ns8250		# ns8250-type UART driver
+device		uart_snps
+device		pl011
+
+# Ethernet NICs
+device		mdio
+device		mii
+device		miibus			# MII bus support
+device		awg			# Allwinner EMAC Gigabit Ethernet
+device		dwc_rk			# Rockchip Designware
+device		genet			# Broadcom on RPi4
+
+# Pseudo devices.
+device		crypto			# core crypto support
+device		loop			# Network loopback
+device		ether			# Ethernet support
+# device		vlan			# 802.1Q VLAN support
+device		tuntap			# Packet tunnel.
+device		md			# Memory "disks"
+device		firmware		# firmware assist module
+
+# EXT_RESOURCES pseudo devices
+options 	EXT_RESOURCES
+device		clk
+device		phy
+device		hwreset
+device		nvmem
+device		regulator
+device		syscon
+device		aw_syscon
+
+# IO Domains
+device		rk_iodomain
+
+# The `bpf' device enables the Berkeley Packet Filter.
+# Be aware of the administrative consequences of enabling this!
+# Note that 'bpf' is required for DHCP.
+device		bpf		# Berkeley packet filter
+
+# USB support
+options 	USB_DEBUG		# enable debug msgs
+options 	USB_HOST_ALIGN=64	# Align usb buffers to cache line size.
+device		aw_usbphy		# Allwinner USB PHY
+device		rk_usb2phy		# Rockchip USB2PHY
+device		rk_typec_phy		# Rockchip TypeC PHY
+device		dwcotg			# DWC OTG controller
+device		ohci			# OHCI USB interface
+device		ehci			# EHCI USB interface (USB 2.0)
+device		xhci			# XHCI USB interface (USB 3.0)
+device		dwc3			# Synopsys DWC controller
+device		rk_dwc3			# Rockchip DWC3 controller
+device		usb			# USB Bus (required)
+device		ukbd			# Keyboard
+device		umass			# Disks/Mass storage - Requires scbus and da
+
+# Sound support
+# device sound
+# device a10_codec
+
+# MMC/SD/SDIO Card slot support
+device		sdhci
+device		aw_mmc			# Allwinner SD/MMC controller
+device		mmc			# mmc/sd bus
+device		mmcsd			# mmc/sd flash cards
+device		dwmmc
+device		rk_dwmmc
+device		rk_emmcphy
+
+options 	FDT
+device		acpi
+
+# DTBs
+makeoptions	MODULES_EXTRA+="dtb/allwinner"
+makeoptions	MODULES_EXTRA+="dtb/rockchip"
+makeoptions	MODULES_EXTRA+="dtb/rpi"
+
+# HID support
+options 	HID_DEBUG	# enable debug msgs
+device		hid		# Generic HID support
+
+#
+nomakeoptions	MODULES_OVERRIDE
+makeoptions	MODULES_OVERRIDE+="dtb/allwinner"
+makeoptions	MODULES_OVERRIDE+="dtb/rockchip"
+makeoptions	MODULES_OVERRIDE+="dtb/rpi"
+makeoptions	MODULES_OVERRIDE+="libiconv"
+makeoptions	MODULES_OVERRIDE+="rc4"
+makeoptions	MODULES_OVERRIDE+="usb/axge"
+makeoptions	MODULES_OVERRIDE+="usb/uchcom"
+makeoptions	MODULES_OVERRIDE+="usb/ucom"
+makeoptions	MODULES_OVERRIDE+="usb/uether"
+# makeoptions	MODULES_OVERRIDE+="usb/umass"
+makeoptions	MODULES_OVERRIDE+="usb/uplcom"
+makeoptions	MODULES_OVERRIDE+="usb/ure"
+
+options 	NULLFS			# NULL filesystem
+
+options 	TEKEN_UTF8		# UTF-8 output handling
