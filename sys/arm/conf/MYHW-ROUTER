@@ -1,0 +1,12 @@
+
+include 	MYHW
+
+ident		MYHW-ROUTER
+
+nooptions 	NFSD			# Network Filesystem Server
+
+device		tun
+
+# Firewall
+device		pf			# Packet Filter
+device		pflog			# Packet Filter
