@@ -45,10 +45,6 @@ FILES=	DAEMON \
 	hostname \
 	iovctl \
 	ip6addrctl \
-	ipfilter \
-	ipfs \
-	ipmon \
-	ipnat \
 	ipsec \
 	${_kadmind} \
 	${_kdc} \
@@ -68,8 +64,6 @@ FILES=	DAEMON \
 	mdconfig \
 	mdconfig2 \
 	mountd \
-	msgs \
-	natd \
 	netif \
 	netoptions \
 	netwait \
@@ -78,18 +72,12 @@ FILES=	DAEMON \
 	nfscbd \
 	nfsd \
 	nfsuserd \
-	nisdomain \
 	${_nscd} \
 	nsswitch \
 	ntpdate \
 	${_opensm} \
-	pf \
-	pflog \
-	pfsync \
-	ppp \
 	pppoed \
 	pwcheck \
-	quota \
 	random \
 	rarpd \
 	rctl \
@@ -121,6 +109,7 @@ FILES=	DAEMON \
 	watchdogd
 
 .if ${MK_NIS} != "no"
+FILES+=	nisdomain
 FILES+=	ypbind \
 	ypldap \
 	yppasswdd \
@@ -214,11 +203,19 @@ HASTPACKAGE=	hast
 FILES+=		inetd
 .endif
 
+.if ${MK_IPFILTER} != "no"
+FILES+=		ipfilter
+FILES+=		ipfs
+FILES+=		ipmon
+FILES+=		ipnat
+.endif
+
 .if ${MK_IPFW} != "no"
 FILES+=		ipfw
 .if ${MK_NETGRAPH} != "no"
 FILES+=		ipfw_netflow
 .endif
+FILES+=		natd
 .endif
 
 .if ${MK_ISCSI} != "no"
@@ -251,6 +248,7 @@ _kpasswdd=	kpasswdd
 .endif
 
 .if ${MK_MAIL} != "no"
+FILES+=		msgs
 FILES+=		othermta
 .endif
 
@@ -278,6 +276,17 @@ SSHPACKAGE=	ssh
 
 .if ${MK_PF} != "no"
 FILES+=		ftp-proxy
+FILES+=		pf
+FILES+=		pflog
+FILES+=		pfsync
+.endif
+
+.if ${MK_PPP} != "no"
+FILES+=		ppp
+.endif
+
+.if ${MK_QUOTAS} != "no"
+FILES+=		quota
 .endif
 
 .if ${MK_ROUTED} != "no"

@@ -24,21 +24,17 @@ LDIRS=	BSD_daemon \
 	find_interface \
 	ibcs2 \
 	indent \
-	ipfw \
-	jails \
 	kld \
 	libvgl \
 	mdoc \
 	netgraph \
 	perfmon \
 	ppi \
-	ppp \
 	printing \
 	ses \
 	scsi_target \
 	sunrpc \
-	uefisign \
-	ypldap
+	uefisign
 
 XFILES=	BSD_daemon/FreeBSD.pfa \
 	BSD_daemon/README \
@@ -74,8 +70,6 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	ibcs2/README \
 	ibcs2/hello.uu \
 	indent/indent.pro \
-	ipfw/change_rules.sh \
-	jails/README \
 	kld/Makefile \
 	kld/cdev/Makefile \
 	kld/cdev/README \
@@ -122,20 +116,6 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	perfmon/perfmon.c \
 	ppi/Makefile \
 	ppi/ppilcd.c \
-	ppp/chap-auth \
-	ppp/login-auth \
-	ppp/ppp.conf.sample \
-	ppp/ppp.conf.span-isp \
-	ppp/ppp.conf.span-isp.working \
-	ppp/ppp.linkdown.sample \
-	ppp/ppp.linkdown.span-isp \
-	ppp/ppp.linkdown.span-isp.working \
-	ppp/ppp.linkup.sample \
-	ppp/ppp.linkup.span-isp \
-	ppp/ppp.linkup.span-isp.working \
-	ppp/ppp.secret.sample \
-	ppp/ppp.secret.span-isp \
-	ppp/ppp.secret.span-isp.working \
 	printing/README \
 	printing/diablo-if-net \
 	printing/hpdf \
@@ -193,8 +173,7 @@ XFILES=	BSD_daemon/FreeBSD.pfa \
 	sunrpc/sort/rsort.c \
 	sunrpc/sort/sort.x \
 	sunrpc/sort/sort_proc.c \
-	uefisign/uefikeys \
-	ypldap/ypldap.conf
+	uefisign/uefikeys
 
 BINDIR= ${SHAREDIR}/examples
 
@@ -205,6 +184,39 @@ XFILES+=	hast/ucarp.sh \
 		hast/ucarp_up.sh \
 		hast/vip-down.sh \
 		hast/vip-up.sh
+.endif
+
+.if ${MK_IPFW} != "no"
+LDIRS+=		ipfw
+XFILES+=	ipfw/change_rules.sh
+.endif
+
+.if ${MK_JAIL} != "no"
+LDIRS+=		jails
+XFILES+=	jails/README
+.endif
+
+.if ${MK_NIS} != "no"
+LDIRS+=		ypldap
+XFILES+=	ypldap/ypldap.conf
+.endif
+
+.if ${MK_PPP} != "no"
+LDIRS+=		ppp
+XFILES+=	ppp/chap-auth \
+		ppp/login-auth \
+		ppp/ppp.conf.sample \
+		ppp/ppp.conf.span-isp \
+		ppp/ppp.conf.span-isp.working \
+		ppp/ppp.linkdown.sample \
+		ppp/ppp.linkdown.span-isp \
+		ppp/ppp.linkdown.span-isp.working \
+		ppp/ppp.linkup.sample \
+		ppp/ppp.linkup.span-isp \
+		ppp/ppp.linkup.span-isp.working \
+		ppp/ppp.secret.sample \
+		ppp/ppp.secret.span-isp \
+		ppp/ppp.secret.span-isp.working
 .endif
 
 .if ${MK_USB} != "no"
