@@ -415,6 +415,13 @@ Note that this process requires access to certain commands in
 before
 .Pa /usr
 is mounted on normal systems.
+.It Va populate_var_cmd
+.Pq Vt str
+Additional command to execute after
+.Pa /var
+has been mounted.
+Note that the command is passed to
+.Ic eval.
 .It Va cleanvar_enable
 .Pq Vt bool
 Clean the
