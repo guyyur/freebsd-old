@@ -42,6 +42,13 @@ load_rc_config $name
 
 populate_var()
 {
+	if [ ! -x /usr/sbin/mtree ]; then
+		# We need mtree to populate /var so try mounting /usr.
+		# If this does not work, we can not boot so it is OK to
+		# try to mount out of order.
+		mount /usr
+		[ ! -x /usr/sbin/mtree ] && exit 1
+	fi
 	/usr/sbin/mtree -deiU -f /etc/mtree/BSD.var.dist -p /var > /dev/null
 	case ${sendmail_enable} in
 	[Nn][Oo][Nn][Ee])
@@ -50,6 +57,9 @@ populate_var()
 		/usr/sbin/mtree -deiU -f /etc/mtree/BSD.sendmail.dist -p / > /dev/null
 		;;
 	esac
+	if [ -n "${populate_var_cmd}" ]; then
+		eval ${populate_var_cmd}
+	fi
 }
 
 # If we do not have a writable /var, create a memory filesystem for /var
@@ -72,9 +82,7 @@ case "${varmfs}" in
 esac
 
 
-# If we have an empty looking /var, populate it, but only if we have
-# /usr available.  Hopefully, we'll eventually find a workaround, but
-# in realistic diskless setups, we're probably ok.
+# If explicitly requested or we have an empty looking /var, populate it.
 case "${populate_var}" in
 [Yy][Ee][Ss])
 	populate_var
@@ -85,18 +93,8 @@ case "${populate_var}" in
 *)
 	if [ -d /var/run -a -d /var/db -a -d /var/empty ] ; then
 		true
-	elif [ -x /usr/sbin/mtree ] ; then
-		populate_var
 	else
-		# We need mtree to populate /var so try mounting /usr.
-		# If this does not work, we can not boot so it is OK to
-		# try to mount out of order.
-		mount /usr
-		if [ ! -x /usr/sbin/mtree ] ; then
-			exit 1
-		else
-			populate_var
-		fi
+		populate_var
 	fi
 	;;
 esac
