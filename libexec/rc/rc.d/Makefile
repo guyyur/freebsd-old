@@ -59,8 +59,6 @@ CONFS=	DAEMON \
 	mdconfig \
 	mdconfig2 \
 	mountd \
-	msgs \
-	natd \
 	netif \
 	netoptions \
 	netwait \
@@ -69,19 +67,13 @@ CONFS=	DAEMON \
 	nfscbd \
 	nfsd \
 	nfsuserd \
-	nisdomain \
 	${_nscd} \
 	ntpdate \
 	${_opensm} \
 	os-release \
-	pf \
-	pflog \
-	pfsync \
 	powerd \
-	ppp \
 	pppoed \
 	pwcheck \
-	quota \
 	random \
 	rarpd \
 	rctl \
@@ -130,6 +122,7 @@ RESOLVCONF=		resolv
 RESOLVCONFPACKAGE=	resolvconf
 
 .if ${MK_NIS} != "no"
+CONFS+=	nisdomain
 CONFS+=	ypbind \
 	ypldap \
 	yppasswdd \
@@ -235,6 +228,7 @@ CONFS+=		ipfw
 .if ${MK_NETGRAPH} != "no"
 CONFS+=		ipfw_netflow
 .endif
+CONFS+=		natd
 .endif
 
 .if ${MK_ISCSI} != "no"
@@ -271,6 +265,7 @@ VAR_HEMIDAL_MODE=	700
 .endif
 
 .if ${MK_MAIL} != "no"
+CONFS+=		msgs
 CONFS+=		othermta
 .endif
 
@@ -302,6 +297,17 @@ SSHPACKAGE=	ssh
 
 .if ${MK_PF} != "no"
 CONFS+=		ftp-proxy
+CONFS+=		pf
+CONFS+=		pflog
+CONFS+=		pfsync
+.endif
+
+.if ${MK_PPP} != "no"
+CONFS+=		ppp
+.endif
+
+.if ${MK_QUOTAS} != "no"
+CONFS+=		quota
 .endif
 
 .if ${MK_ROUTED} != "no"
