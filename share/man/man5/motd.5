@@ -10,12 +10,13 @@
 .Nm motd
 .Nd file containing message(s) of the day
 .Sh DESCRIPTION
-The file
-.Pa /var/run/motd
+The
+.Nm
 is normally displayed by
 .Xr login 1
 after a user has logged in but before the shell is run.
 It is generally used for important system-wide announcements.
+.Pp
 During system startup, a line containing the kernel version string is
 prepended to
 .Pa /etc/motd.template
@@ -30,6 +31,22 @@ motd service after updating
 service motd restart
 .Ed
 .Pp
+If
+.Pa /etc/motd
+exists and is a regular file, it will be used to overwrite
+.Pa /etc/motd.template .
+It will then be removed and replaced with a symbolic link to
+.Pa /var/run/motd .
+.Pp
+To use an immutable
+.Pa /etc/motd ,
+create it as a regular file and set
+.Va update_motd
+to
+.Dq Li NO
+in
+.Xr rc.conf 5 .
+.Pp
 Individual users may suppress the display of this file by
 creating a file named
 .Dq Pa .hushlogin
@@ -37,13 +54,17 @@ in their home directories or through
 .Xr login.conf 5 .
 .Sh FILES
 .Bl -tag -width $HOME/.hushlogin -compact
+.It Pa /etc/motd
+Symbolic link to actual
+.Pa motd
+file or regular file with the message of the day.
 .It Pa /etc/motd.template
 The template file that system administrators can edit.
 .It Pa /var/run/motd
-The message of the day.
+The generated message of the day.
 .It Pa $HOME/.hushlogin
 Suppresses output of
-.Pa /var/run/motd .
+.Pa /etc/motd .
 .El
 .Sh EXAMPLES
 .Bd -literal
@@ -58,5 +79,4 @@ FreeBSD 12.1-RELEASE (GENERIC) #0: Sun Dec 29 03:08:31 PST 2019
 Prior to
 .Fx 13.0 ,
 .Nm
-lived in
-.Pa /etc .
+was a regular file.
