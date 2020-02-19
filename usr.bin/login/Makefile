@@ -31,5 +31,6 @@ afterinstallconfig:
 	echo "./etc/login.conf.db type=file mode=0644 uname=root gname=wheel" | \
 		cat -l >> ${METALOG}
 .endif
+	${INSTALL_SYMLINK} ${TAG_ARGS} ../var/run/motd ${DESTDIR}/etc/motd
 
 .include <bsd.prog.mk>
