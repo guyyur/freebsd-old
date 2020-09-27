@@ -1235,10 +1235,8 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 	struct nd_prefix *pr;
 	struct ifaddr *ifa;
 	struct rt_addrinfo info;
-	struct sockaddr_in6 rt_key;
+	struct sockaddr_dl gw;
 	const struct sockaddr *dst6;
-	uint64_t genid;
-	int error, fibnum;
 
 	/*
 	 * A link-local address is always a neighbor.
@@ -1263,9 +1261,8 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 			return (0);
 	}
 
-	bzero(&rt_key, sizeof(rt_key));
 	bzero(&info, sizeof(info));
-	info.rti_info[RTAX_DST] = (struct sockaddr *)&rt_key;
+	info.rti_info[RTAX_GATEWAY] = (struct sockaddr *)&gw;
 
 	/*
 	 * If the address matches one of our addresses,
@@ -1273,49 +1270,60 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 	 * If the address matches one of our on-link prefixes, it should be a
 	 * neighbor.
 	 */
+
+	/*
+	 * All on-link prefixes should be installed in the routing table for the
+	 * interface fib. Query routing table first to ensure deterministic
+	 * lookup time for the cases with large amount of on-link prefixes.
+	 */
+	dst6 = (const struct sockaddr *)addr;
+	if (rib_lookup_info(ifp->if_fib, dst6, 0, 0, &info) == 0) {
+		if (info.rti_ifp == ifp && (info.rti_flags & RTF_GATEWAY) == 0){
+
+			/*
+			 * Every prefix pointing to the right interface which
+			 *  does not contain gateway is eligible.
+			 * 
+			 * This covers both kernel-installed routes (RTF_PINNED)
+			 *  and user-installed routes (RTF_STATIC)
+			 *
+			 * Note that RTF_BLACKHOLE / RTF_REJECT would never point
+			 * to a non-loopback interface.
+			 */
+
+			return (1);
+		}
+
+		if (gw.sdl_family == AF_LINK && gw.sdl_index == ifp->if_index) {
+
+			/*
+			 * Loopback route for the interface address from the
+			 * interface @ifp. Consider as a neighbor.
+			 */
+
+			return (1);
+		}
+	}
+
 	ND6_RLOCK();
-restart:
 	LIST_FOREACH(pr, &V_nd_prefix, ndpr_entry) {
 		if (pr->ndpr_ifp != ifp)
 			continue;
 
 		if ((pr->ndpr_stateflags & NDPRF_ONLINK) == 0) {
-			dst6 = (const struct sockaddr *)&pr->ndpr_prefix;
 
 			/*
-			 * We only need to check all FIBs if add_addr_allfibs
-			 * is unset. If set, checking any FIB will suffice.
+			 * Prefix can be off-link either because
+			 * 1) it is not installed to the routing table
+			 *  because another prefix has been installed.
+			 * or
+			 * 2) prefix has expired but some addresses from
+			 *  this prefix are still in use.
+			 *
+			 * Consider prefix as valid if (2) is not the case.
 			 */
-			fibnum = V_rt_add_addr_allfibs ? rt_numfibs - 1 : 0;
-			for (; fibnum < rt_numfibs; fibnum++) {
-				genid = V_nd6_list_genid;
-				ND6_RUNLOCK();
-
-				/*
-				 * Restore length field before
-				 * retrying lookup
-				 */
-				rt_key.sin6_len = sizeof(rt_key);
-				error = rib_lookup_info(fibnum, dst6, 0, 0,
-						        &info);
-
-				ND6_RLOCK();
-				if (genid != V_nd6_list_genid)
-					goto restart;
-				if (error == 0)
-					break;
-			}
-			if (error != 0)
-				continue;
-
-			/*
-			 * This is the case where multiple interfaces
-			 * have the same prefix, but only one is installed 
-			 * into the routing table and that prefix entry
-			 * is not the one being examined here.
-			 */
-			if (!IN6_ARE_ADDR_EQUAL(&pr->ndpr_prefix.sin6_addr,
-			    &rt_key.sin6_addr))
+			if (pr->ndpr_vltime != ND6_INFINITE_LIFETIME &&
+			    time_uptime >= pr->ndpr_lastupdate + pr->ndpr_vltime)
 				continue;
 		}
 
