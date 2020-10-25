@@ -714,7 +714,9 @@ case "${RERUN}" in
 
   # Avoid comparing the following user specified files
   for file in ${IGNORE_FILES}; do
-    test -e ${TEMPROOT}/${file} && unlink ${TEMPROOT}/${file}
+    if [ -L ${TEMPROOT}/${file} -o -e ${TEMPROOT}/${file} ]; then
+      unlink ${TEMPROOT}/${file}
+    fi
   done
 
   # We really don't want to have to deal with files like login.conf.db, pwd.db,
