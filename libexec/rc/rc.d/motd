@@ -54,5 +54,24 @@ motd_start()
 	check_startmsgs && echo '.'
 }
 
+motd_start_static()
+{
+	if [ ! -e "${TARGET}" ]; then
+		if [ -r "$COMPAT_MOTD" ]; then
+			install -C -o root -g wheel -m "${PERMS}" "$COMPAT_MOTD" "${TARGET}"
+		else
+			install -C -o root -g wheel -m "${PERMS}" "$TEMPLATE" "${TARGET}"
+		fi
+	fi
+}
+
 load_rc_config $name
+if ! checkyesno $rcvar
+then
+	case $1 in
+	start|faststart|forcestart|onestart|quietstart)
+		motd_start_static
+		;;
+	esac
+fi
 run_rc_command "$1"
