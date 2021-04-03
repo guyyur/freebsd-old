@@ -149,11 +149,16 @@ static int	ure_attach_post_sub(struct usb_ether *);
 static void	ure_reset(struct ure_softc *);
 static int	ure_ifmedia_upd(struct ifnet *);
 static void	ure_ifmedia_sts(struct ifnet *, struct ifmediareq *);
+static void	ure_rxvlan(struct ure_softc *);
 static int	ure_ioctl(struct ifnet *, u_long, caddr_t);
 static void	ure_rtl8152_init(struct ure_softc *);
 static void	ure_rtl8153_init(struct ure_softc *);
+static void	ure_rtl8153b_init(struct ure_softc *);
+static void	ure_rtl8152_nic_reset(struct ure_softc *);
+static void	ure_rtl8153_nic_reset(struct ure_softc *);
+static void	ure_rtl8153_phy_status(struct ure_softc *, int);
+static void	ure_reset_bmu(struct ure_softc *);
 static void	ure_disable_teredo(struct ure_softc *);
-static void	ure_init_fifo(struct ure_softc *);
 static void	ure_rxcsum(int capenb, struct ure_rxpkt *rp, struct mbuf *m);
 static int	ure_txcsum(struct mbuf *m, int caps, uint32_t *regout);
 
@@ -282,6 +287,20 @@ static const struct usb_ether_methods ure_ue_methods = {
 	.ue_mii_upd = ure_ifmedia_upd,
 	.ue_mii_sts = ure_ifmedia_sts,
 };
+
+#define URE_SETBIT_1(sc, reg, index, x) \
+	ure_write_1(sc, reg, index, ure_read_1(sc, reg, index) | (x))
+#define URE_SETBIT_2(sc, reg, index, x) \
+	ure_write_2(sc, reg, index, ure_read_2(sc, reg, index) | (x))
+#define URE_SETBIT_4(sc, reg, index, x) \
+	ure_write_4(sc, reg, index, ure_read_4(sc, reg, index) | (x))
+
+#define URE_CLRBIT_1(sc, reg, index, x) \
+	ure_write_1(sc, reg, index, ure_read_1(sc, reg, index) & ~(x))
+#define URE_CLRBIT_2(sc, reg, index, x) \
+	ure_write_2(sc, reg, index, ure_read_2(sc, reg, index) & ~(x))
+#define URE_CLRBIT_4(sc, reg, index, x) \
+	ure_write_4(sc, reg, index, ure_read_4(sc, reg, index) & ~(x))
 
 static int
 ure_ctl(struct ure_softc *sc, uint8_t rw, uint16_t val, uint16_t index,
@@ -911,6 +930,12 @@ ure_read_chipver(struct ure_softc *sc)
 	case 0x5c30:
 		sc->sc_chip |= URE_CHIP_VER_5C30;
 		break;
+	case 0x6000:
+		sc->sc_flags = URE_FLAG_8153B;
+		break;
+	case 0x6010:
+		sc->sc_flags = URE_FLAG_8153B;
+		break;
 	default:
 		device_printf(sc->sc_ue.ue_dev,
 		    "unknown version 0x%04x\n", ver);
@@ -949,6 +974,8 @@ ure_attach_post(struct usb_ether *ue)
 	/* Initialize controller and get station address. */
 	if (sc->sc_flags & URE_FLAG_8152)
 		ure_rtl8152_init(sc);
+	else if (sc->sc_flags & URE_FLAG_8153B)
+		ure_rtl8153b_init(sc);
 	else
 		ure_rtl8153_init(sc);
 
@@ -972,10 +999,10 @@ static int
 ure_attach_post_sub(struct usb_ether *ue)
 {
 	struct sysctl_ctx_list *sctx;
-	struct sysctl_oid *soid;	
+	struct sysctl_oid *soid;
 	struct ure_softc *sc;
 	struct ifnet *ifp;
-	int error;
+	int error, mii_flags;
 
 	sc = uether_getsc(ue);
 	ifp = ue->ue_ifp;
@@ -1001,9 +1028,12 @@ ure_attach_post_sub(struct usb_ether *ue)
 	if_setcapenable(ifp, if_getcapabilities(ifp));
 
 	mtx_lock(&Giant);
+	mii_flags = 0;
+	if (!(sc->sc_flags & URE_FLAG_8152))
+		mii_flags |= MIIF_DOPAUSE;
 	error = mii_attach(ue->ue_dev, &ue->ue_miibus, ifp,
 	    uether_ifmedia_upd, ue->ue_methods->ue_mii_sts,
-	    BMSR_DEFCAPMASK, sc->sc_phyno, MII_OFFSET_ANY, 0);
+	    BMSR_DEFCAPMASK, sc->sc_phyno, MII_OFFSET_ANY, mii_flags);
 	mtx_unlock(&Giant);
 
 	sctx = device_get_sysctl_ctx(sc->sc_ue.ue_dev);
@@ -1022,6 +1052,7 @@ ure_init(struct usb_ether *ue)
 	struct ure_softc *sc = uether_getsc(ue);
 	struct ifnet *ifp = uether_getifp(ue);
 	uint16_t cpcr;
+	uint32_t reg = 0;
 
 	URE_LOCK_ASSERT(sc, MA_OWNED);
 
@@ -1031,7 +1062,10 @@ ure_init(struct usb_ether *ue)
 	/* Cancel pending I/O. */
 	ure_stop(ue);
 
-	ure_reset(sc);
+	if (sc->sc_flags & URE_FLAG_8152)
+		ure_rtl8152_nic_reset(sc);
+	else
+		ure_rtl8153_nic_reset(sc);
 
 	/* Set MAC address. */
 	ure_write_1(sc, URE_PLA_CRWECR, URE_MCU_TYPE_PLA, URE_CRWECR_CONFIG);
@@ -1039,13 +1073,39 @@ ure_init(struct usb_ether *ue)
 	    IF_LLADDR(ifp), 8);
 	ure_write_1(sc, URE_PLA_CRWECR, URE_MCU_TYPE_PLA, URE_CRWECR_NORAML);
 
+	if (!(sc->sc_flags & URE_FLAG_8152)) {
+		reg = URE_BUFSZ - URE_FRAMELEN(ifp->if_mtu) -
+		    sizeof(struct ure_rxpkt) - URE_RX_BUF_ALIGN;
+		if (sc->sc_flags & URE_FLAG_8153B) {
+			ure_write_2(sc, URE_USB_RX_EARLY_SIZE, URE_MCU_TYPE_USB,
+			    reg / 8);
+
+			ure_write_2(sc, URE_USB_RX_EARLY_AGG, URE_MCU_TYPE_USB,
+			    16);
+			ure_write_2(sc, URE_USB_PM_CTRL_STATUS,
+			    URE_MCU_TYPE_USB, 15000);
+		} else {
+			ure_write_2(sc, URE_USB_RX_EARLY_SIZE, URE_MCU_TYPE_USB,
+			    reg / 4);
+			switch (usbd_get_speed(sc->sc_ue.ue_udev)) {
+			case USB_SPEED_SUPER:
+				reg = URE_COALESCE_SUPER / 8;
+				break;
+			case USB_SPEED_HIGH:
+				reg = URE_COALESCE_HIGH / 8;
+				break;
+			default:
+				reg = URE_COALESCE_SLOW / 8;
+				break;
+			}
+			ure_write_2(sc, URE_USB_RX_EARLY_AGG, URE_MCU_TYPE_USB,
+			    reg);
+		}
+	}
+
 	/* Reset the packet filter. */
-	ure_write_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA) &
-	    ~URE_FMC_FCR_MCU_EN);
-	ure_write_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA) |
-	    URE_FMC_FCR_MCU_EN);
+	URE_CLRBIT_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA, URE_FMC_FCR_MCU_EN);
+	URE_SETBIT_2(sc, URE_PLA_FMC, URE_MCU_TYPE_PLA, URE_FMC_FCR_MCU_EN);
 
 	/* Enable RX VLANs if enabled */
 	cpcr = ure_read_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA);
@@ -1059,13 +1119,14 @@ ure_init(struct usb_ether *ue)
 	ure_write_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA, cpcr);
 
 	/* Enable transmit and receive. */
-	ure_write_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA,
-	    ure_read_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA) | URE_CR_RE |
-	    URE_CR_TE);
+	URE_SETBIT_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA, URE_CR_RE | URE_CR_TE);
 
-	ure_write_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA) &
-	    ~URE_RXDY_GATED_EN);
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		ure_write_1(sc, URE_USB_UPT_RXDMA_OWN, URE_MCU_TYPE_USB,
+		    URE_OWN_UPDATE | URE_OWN_CLEAR);
+	}
+
+	URE_CLRBIT_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA, URE_RXDY_GATED_EN);
 
 	/*  Configure RX filters. */
 	ure_rxfilter(ue);
@@ -1073,6 +1134,7 @@ ure_init(struct usb_ether *ue)
 	usbd_xfer_set_stall(sc->sc_tx_xfer[0]);
 
 	/* Indicate we are up and running. */
+	sc->sc_flags &= ~URE_FLAG_LINK;
 	ifp->if_drv_flags |= IFF_DRV_RUNNING;
 
 	/* Switch to selected media. */
@@ -1156,8 +1218,8 @@ ure_rxfilter(struct usb_ether *ue)
 done:
 	DEVPRINTFN(14, ue->ue_dev, "rxfilt: RCR: %#x\n",
 	    ure_read_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA));
-	ure_write_4(sc, URE_PLA_MAR0, URE_MCU_TYPE_PLA, hashes[0]);
-	ure_write_4(sc, URE_PLA_MAR4, URE_MCU_TYPE_PLA, hashes[1]);
+	ure_write_mem(sc, URE_PLA_MAR, URE_MCU_TYPE_PLA | URE_BYTE_EN_DWORD,
+	    hashes, sizeof(hashes));
 	ure_write_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA, rxmode);
 }
 
@@ -1177,6 +1239,19 @@ ure_start(struct usb_ether *ue)
 
 	for (i = 0; i != URE_N_TRANSFER; i++)
 		usbd_transfer_start(sc->sc_tx_xfer[i]);
+}
+
+static void
+ure_rxvlan(struct ure_softc *sc)
+{
+	struct ifnet	*ifp = uether_getifp(&sc->sc_ue);
+	uint16_t	reg;
+
+	reg = ure_read_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA);
+	reg &= ~URE_CPCR_RX_VLAN;
+	if (ifp->if_capabilities & IFCAP_VLAN_HWTAGGING)
+		reg |= URE_CPCR_RX_VLAN;
+	ure_write_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA, reg);
 }
 
 static void
@@ -1315,21 +1390,15 @@ ure_rtl8152_init(struct ure_softc *sc)
 	    URE_DIS_SDSAVE);
 	uether_pause(&sc->sc_ue, hz / 50);
 
-	if (sc->sc_chip & URE_CHIP_VER_4C00) {
-		ure_write_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA,
-		    ure_read_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA) &
-		    ~URE_LED_MODE_MASK);
-	}
+	if (sc->sc_chip & URE_CHIP_VER_4C00)
+		URE_CLRBIT_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA,
+		    URE_LED_MODE_MASK);
 
-	ure_write_2(sc, URE_USB_UPS_CTRL, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_UPS_CTRL, URE_MCU_TYPE_USB) &
-	    ~URE_POWER_CUT);
-	ure_write_2(sc, URE_USB_PM_CTRL_STATUS, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_PM_CTRL_STATUS, URE_MCU_TYPE_USB) &
-	    ~URE_RESUME_INDICATE);
+	URE_CLRBIT_2(sc, URE_USB_UPS_CTRL, URE_MCU_TYPE_USB, URE_POWER_CUT);
+	URE_CLRBIT_2(sc, URE_USB_PM_CTRL_STATUS, URE_MCU_TYPE_USB,
+	    URE_RESUME_INDICATE);
 
-	ure_write_2(sc, URE_PLA_PHY_PWR, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_PHY_PWR, URE_MCU_TYPE_PLA) |
+	URE_SETBIT_2(sc, URE_PLA_PHY_PWR, URE_MCU_TYPE_PLA,
 	    URE_TX_10M_IDLE_EN | URE_PFM_PWM_SWITCH);
 	pwrctrl = ure_read_4(sc, URE_PLA_MAC_PWR_CTRL, URE_MCU_TYPE_PLA);
 	pwrctrl &= ~URE_MCU_CLK_RATIO_MASK;
@@ -1339,173 +1408,396 @@ ure_rtl8152_init(struct ure_softc *sc)
 	    URE_GPHY_STS_MSK | URE_SPEED_DOWN_MSK | URE_SPDWN_RXDV_MSK |
 	    URE_SPDWN_LINKCHG_MSK);
 
+	URE_SETBIT_2(sc, URE_PLA_RSTTALLY, URE_MCU_TYPE_PLA, URE_TALLY_RESET);
+
 	/* Enable Rx aggregation. */
-	ure_write_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB) &
-	    ~URE_RX_AGG_DISABLE);
+	URE_CLRBIT_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB,
+	    URE_RX_AGG_DISABLE | URE_RX_ZERO_EN);
+}
+
+static void
+ure_rtl8153_init(struct ure_softc *sc)
+{
+	uint16_t reg;
+	uint8_t u1u2[8];
+	int i;
+
+	memset(u1u2, 0x00, sizeof(u1u2));
+	ure_write_mem(sc, URE_USB_TOLERANCE, URE_BYTE_EN_SIX_BYTES, u1u2,
+	    sizeof(u1u2));
+
+	for (i = 0; i < 500; i++) {
+		if (ure_read_2(sc, URE_PLA_BOOT_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_AUTOLOAD_DONE)
+			break;
+		uether_pause(&sc->sc_ue, hz / 50);
+	}
+	if (i == 500)
+		device_printf(sc->sc_ue.ue_dev,
+		    "timeout waiting for chip autoload\n");
+
+	ure_rtl8153_phy_status(sc, 0);
+
+	if (sc->sc_chip & (URE_CHIP_VER_5C00 | URE_CHIP_VER_5C10 |
+	    URE_CHIP_VER_5C20)) {
+		ure_ocp_reg_write(sc, URE_OCP_ADC_CFG,
+		    URE_CKADSEL_L | URE_ADC_EN | URE_EN_EMI_L);
+	}
+
+	ure_rtl8153_phy_status(sc, 1);
+
+	URE_CLRBIT_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, URE_U2P3_ENABLE);
+
+	if (sc->sc_chip & URE_CHIP_VER_5C10) {
+		reg = ure_read_2(sc, URE_USB_SSPHYLINK2, URE_MCU_TYPE_USB);
+		reg &= ~URE_PWD_DN_SCALE_MASK;
+		reg |= URE_PWD_DN_SCALE(96);
+		ure_write_2(sc, URE_USB_SSPHYLINK2, URE_MCU_TYPE_USB, reg);
+
+		URE_SETBIT_1(sc, URE_USB_USB2PHY, URE_MCU_TYPE_USB,
+		    URE_USB2PHY_L1 | URE_USB2PHY_SUSPEND);
+	} else if (sc->sc_chip & URE_CHIP_VER_5C20) {
+		URE_CLRBIT_1(sc, URE_PLA_DMY_REG0, URE_MCU_TYPE_PLA,
+		    URE_ECM_ALDPS);
+	}
+	if (sc->sc_chip & (URE_CHIP_VER_5C20 | URE_CHIP_VER_5C30)) {
+		if (ure_read_2(sc, URE_USB_BURST_SIZE, URE_MCU_TYPE_USB))
+			URE_SETBIT_1(sc, URE_USB_CSR_DUMMY1, URE_MCU_TYPE_USB,
+			    URE_DYNAMIC_BURST);
+		else
+			URE_CLRBIT_1(sc, URE_USB_CSR_DUMMY1, URE_MCU_TYPE_USB,
+			    URE_DYNAMIC_BURST);
+	}
+
+	URE_SETBIT_1(sc, URE_USB_CSR_DUMMY2, URE_MCU_TYPE_USB, URE_EP4_FULL_FC);
+
+	URE_CLRBIT_2(sc, URE_USB_WDT11_CTRL, URE_MCU_TYPE_USB, URE_TIMER11_EN);
+
+	URE_CLRBIT_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA,
+	    URE_LED_MODE_MASK);
+
+	if ((sc->sc_chip & URE_CHIP_VER_5C10) &&
+	    usbd_get_speed(sc->sc_ue.ue_udev) != USB_SPEED_SUPER)
+		reg = URE_LPM_TIMER_500MS;
+	else
+		reg = URE_LPM_TIMER_500US;
+	ure_write_1(sc, URE_USB_LPM_CTRL, URE_MCU_TYPE_USB,
+	    URE_FIFO_EMPTY_1FB | URE_ROK_EXIT_LPM | reg);
+
+	reg = ure_read_2(sc, URE_USB_AFE_CTRL2, URE_MCU_TYPE_USB);
+	reg &= ~URE_SEN_VAL_MASK;
+	reg |= URE_SEN_VAL_NORMAL | URE_SEL_RXIDLE;
+	ure_write_2(sc, URE_USB_AFE_CTRL2, URE_MCU_TYPE_USB, reg);
+
+	ure_write_2(sc, URE_USB_CONNECT_TIMER, URE_MCU_TYPE_USB, 0x0001);
+
+	URE_CLRBIT_2(sc, URE_USB_POWER_CUT, URE_MCU_TYPE_USB,
+	    URE_PWR_EN | URE_PHASE2_EN);
+	URE_CLRBIT_2(sc, URE_USB_MISC_0, URE_MCU_TYPE_USB, URE_PCUT_STATUS);
+
+	memset(u1u2, 0xff, sizeof(u1u2));
+
+	ure_write_mem(sc, URE_USB_TOLERANCE, URE_BYTE_EN_SIX_BYTES, u1u2,
+	    sizeof(u1u2));
+
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL2, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL3, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL4, URE_MCU_TYPE_PLA, 0);
+
+	/* Enable Rx aggregation. */
+	URE_CLRBIT_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB,
+	    URE_RX_AGG_DISABLE | URE_RX_ZERO_EN);
+
+	URE_SETBIT_2(sc, URE_PLA_RSTTALLY, URE_MCU_TYPE_PLA, URE_TALLY_RESET);
+}
+
+static void
+ure_rtl8153b_init(struct ure_softc *sc)
+{
+	int	i;
+
+	URE_CLRBIT_2(sc, URE_USB_LPM_CONFIG, URE_MCU_TYPE_USB, LPM_U1U2_EN);
+
+	for (i = 0; i < 500; i++) {
+		if (ure_read_2(sc, URE_PLA_BOOT_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_AUTOLOAD_DONE)
+			break;
+		uether_pause(&sc->sc_ue, hz / 50);
+	}
+	if (i == 500)
+		device_printf(sc->sc_ue.ue_dev,
+		    "timeout waiting for chip autoload\n");
+
+	ure_rtl8153_phy_status(sc, 0);
+	ure_rtl8153_phy_status(sc, 1);
+
+	URE_CLRBIT_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, URE_U2P3_ENABLE);
+
+	/* MSC timer, 32760 ms. */
+	ure_write_2(sc, URE_USB_MSC_TIMER, URE_MCU_TYPE_USB, 0x0fff);
+
+	/* U1/U2/L1 idle timer, 500 us. */
+	ure_write_2(sc, URE_USB_U1U2_TIMER, URE_MCU_TYPE_USB, 500);
+
+	URE_CLRBIT_2(sc, URE_USB_POWER_CUT, URE_MCU_TYPE_USB, URE_PWR_EN);
+	URE_CLRBIT_2(sc, URE_USB_MISC_0, URE_MCU_TYPE_USB, URE_PCUT_STATUS);
+
+	URE_CLRBIT_1(sc, URE_USB_POWER_CUT, URE_MCU_TYPE_USB,
+	    URE_UPS_EN | URE_USP_PREWAKE);
+	URE_CLRBIT_1(sc, 0xcfff, URE_MCU_TYPE_USB, 0x01);
+	URE_CLRBIT_2(sc, URE_USB_MISC_0, URE_MCU_TYPE_USB, URE_PCUT_STATUS);
+	ure_rtl8153_phy_status(sc, 0);
+
+	URE_CLRBIT_1(sc, URE_PLA_INDICATE_FALG, URE_MCU_TYPE_PLA,
+	    URE_UPCOMING_RUNTIME_D3);
+	URE_CLRBIT_1(sc, URE_PLA_SUSPEND_FLAG, URE_MCU_TYPE_PLA,
+	    URE_LINK_CHG_EVENT);
+	URE_CLRBIT_2(sc, URE_PLA_EXTRA_STATUS, URE_MCU_TYPE_PLA,
+	    URE_LINK_CHANGE_FLAG);
+
+	ure_write_1(sc, URE_PLA_CRWECR, URE_MCU_TYPE_PLA, URE_CRWECR_CONFIG);
+	URE_CLRBIT_2(sc, URE_PLA_CONFIG34, URE_MCU_TYPE_PLA,
+	    URE_LINK_OFF_WAKE_EN);
+	ure_write_1(sc, URE_PLA_CRWECR, URE_MCU_TYPE_PLA, URE_CRWECR_NORAML);
+
+	URE_SETBIT_2(sc, URE_USB_LPM_CONFIG, URE_MCU_TYPE_USB, LPM_U1U2_EN);
+
+	/* MAC clock speed down. */
+	URE_SETBIT_2(sc, URE_PLA_MAC_PWR_CTRL2, URE_MCU_TYPE_PLA,
+	    URE_MAC_CLK_SPDWN_EN);
+
+	/* Enable Rx aggregation. */
+	URE_CLRBIT_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB,
+	    URE_RX_AGG_DISABLE | URE_RX_ZERO_EN);
+
+	URE_SETBIT_2(sc, URE_PLA_RSTTALLY, URE_MCU_TYPE_PLA, URE_TALLY_RESET);
+}
+
+static void
+ure_rtl8152_nic_reset(struct ure_softc *sc)
+{
+	uint32_t	rx_fifo1, rx_fifo2;
+	int		i;
 
 	/* Disable ALDPS. */
 	ure_ocp_reg_write(sc, URE_OCP_ALDPS_CONFIG, URE_ENPDNPS | URE_LINKENA |
 	    URE_DIS_SDSAVE);
 	uether_pause(&sc->sc_ue, hz / 50);
 
-	ure_init_fifo(sc);
+	URE_CLRBIT_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA, URE_RCR_ACPT_ALL);
+
+	URE_SETBIT_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA, URE_RXDY_GATED_EN);
+	ure_disable_teredo(sc);
+	ure_write_1(sc, URE_PLA_CRWECR, URE_MCU_TYPE_PLA, URE_CRWECR_NORAML);
+	ure_write_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA, 0);
+
+	URE_CLRBIT_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA, URE_NOW_IS_OOB);
+	URE_CLRBIT_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA, URE_MCU_BORW_EN);
+	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_LINK_LIST_READY)
+			break;
+		uether_pause(&sc->sc_ue, hz / 1000);
+	}
+	if (i == URE_TIMEOUT)
+		device_printf(sc->sc_ue.ue_dev,
+		    "timeout waiting for OOB control\n");
+
+	URE_SETBIT_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA, URE_RE_INIT_LL);
+	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_LINK_LIST_READY)
+			break;
+		uether_pause(&sc->sc_ue, hz / 1000);
+	}
+	if (i == URE_TIMEOUT)
+		device_printf(sc->sc_ue.ue_dev,
+		    "timeout waiting for OOB control\n");
+
+	ure_reset(sc);
+
+	/* Configure Rx FIFO threshold. */
+	ure_write_4(sc, URE_PLA_RXFIFO_CTRL0, URE_MCU_TYPE_PLA,
+	    URE_RXFIFO_THR1_NORMAL);
+	if (usbd_get_speed(sc->sc_ue.ue_udev) == USB_SPEED_FULL) {
+		rx_fifo1 = URE_RXFIFO_THR2_FULL;
+		rx_fifo2 = URE_RXFIFO_THR3_FULL;
+	} else {
+		rx_fifo1 = URE_RXFIFO_THR2_HIGH;
+		rx_fifo2 = URE_RXFIFO_THR3_HIGH;
+	}
+	ure_write_4(sc, URE_PLA_RXFIFO_CTRL1, URE_MCU_TYPE_PLA, rx_fifo1);
+	ure_write_4(sc, URE_PLA_RXFIFO_CTRL2, URE_MCU_TYPE_PLA, rx_fifo2);
+
+	/* Configure Tx FIFO threshold. */
+	ure_write_4(sc, URE_PLA_TXFIFO_CTRL, URE_MCU_TYPE_PLA,
+	    URE_TXFIFO_THR_NORMAL);
 
 	ure_write_1(sc, URE_USB_TX_AGG, URE_MCU_TYPE_USB,
 	    URE_TX_AGG_MAX_THRESHOLD);
 	ure_write_4(sc, URE_USB_RX_BUF_TH, URE_MCU_TYPE_USB, URE_RX_THR_HIGH);
 	ure_write_4(sc, URE_USB_TX_DMA, URE_MCU_TYPE_USB,
 	    URE_TEST_MODE_DISABLE | URE_TX_SIZE_ADJUST1);
+
+	ure_rxvlan(sc);
+        ure_write_2(sc, URE_PLA_RMS, URE_MCU_TYPE_PLA,
+	    ETHER_MAX_LEN + ETHER_VLAN_ENCAP_LEN);
+	URE_SETBIT_2(sc, URE_PLA_TCR0, URE_MCU_TYPE_PLA, URE_TCR0_AUTO_FIFO);
+
+	/* Enable ALDPS. */
+	ure_ocp_reg_write(sc, URE_OCP_ALDPS_CONFIG,
+	    URE_ENPWRSAVE | URE_ENPDNPS | URE_LINKENA | URE_DIS_SDSAVE);
 }
 
 static void
-ure_rtl8153_init(struct ure_softc *sc)
+ure_rtl8153_nic_reset(struct ure_softc *sc)
 {
-	uint16_t val;
-	uint8_t u1u2[8];
-	int i;
+	struct ifnet	*ifp = uether_getifp(&sc->sc_ue);
+	uint32_t	reg = 0;
+	uint8_t		u1u2[8] = { 0 };
+	int		i;
+
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		URE_CLRBIT_2(sc, URE_USB_LPM_CONFIG, URE_MCU_TYPE_USB,
+		    LPM_U1U2_EN);
+	} else {
+		memset(u1u2, 0x00, sizeof(u1u2));
+		ure_write_mem(sc, URE_USB_TOLERANCE, URE_BYTE_EN_SIX_BYTES,
+		    u1u2, sizeof(u1u2));
+	}
+	URE_CLRBIT_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, URE_U2P3_ENABLE);
 
 	/* Disable ALDPS. */
 	ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
 	    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) & ~URE_EN_ALDPS);
-	uether_pause(&sc->sc_ue, hz / 50);
-
-	memset(u1u2, 0x00, sizeof(u1u2));
-	ure_write_mem(sc, URE_USB_TOLERANCE,
-	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
-
-	for (i = 0; i < URE_TIMEOUT; i++) {
-		if (ure_read_2(sc, URE_PLA_BOOT_CTRL, URE_MCU_TYPE_PLA) &
-		    URE_AUTOLOAD_DONE)
+	for (i = 0; i < 20; i++) {
+		uether_pause(&sc->sc_ue, hz / 1000);
+		if (ure_read_2(sc, 0xe000, URE_MCU_TYPE_PLA) & 0x0100)
 			break;
-		uether_pause(&sc->sc_ue, hz / 100);
+	}
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		URE_CLRBIT_4(sc, URE_USB_UPS_FLAGS, URE_MCU_TYPE_USB,
+		    URE_UPS_FLAGS_EN_ALDPS);
+	}
+
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL2, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL3, URE_MCU_TYPE_PLA, 0);
+	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL4, URE_MCU_TYPE_PLA, 0);
+	URE_SETBIT_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA, URE_RXDY_GATED_EN);
+	ure_disable_teredo(sc);
+
+	URE_CLRBIT_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA, URE_RCR_ACPT_ALL);
+
+	ure_reset(sc);
+	ure_reset_bmu(sc);
+
+	URE_CLRBIT_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA, URE_NOW_IS_OOB);
+	URE_CLRBIT_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA, URE_MCU_BORW_EN);
+	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_LINK_LIST_READY)
+			break;
+		uether_pause(&sc->sc_ue, hz / 1000);
 	}
 	if (i == URE_TIMEOUT)
 		device_printf(sc->sc_ue.ue_dev,
-		    "timeout waiting for chip autoload\n");
-
+		    "timeout waiting for OOB control\n");
+	URE_SETBIT_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA, URE_RE_INIT_LL);
 	for (i = 0; i < URE_TIMEOUT; i++) {
-		val = ure_ocp_reg_read(sc, URE_OCP_PHY_STATUS) &
-		    URE_PHY_STAT_MASK;
-		if (val == URE_PHY_STAT_LAN_ON || val == URE_PHY_STAT_PWRDN)
+		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
+		    URE_LINK_LIST_READY)
 			break;
-		uether_pause(&sc->sc_ue, hz / 100);
+		uether_pause(&sc->sc_ue, hz / 1000);
 	}
 	if (i == URE_TIMEOUT)
+		device_printf(sc->sc_ue.ue_dev,
+		    "timeout waiting for OOB control\n");
+
+	ure_rxvlan(sc);
+	ure_write_2(sc, URE_PLA_RMS, URE_MCU_TYPE_PLA,
+	    URE_FRAMELEN(ifp->if_mtu));
+	ure_write_1(sc, URE_PLA_MTPS, URE_MCU_TYPE_PLA, MTPS_JUMBO);
+	URE_SETBIT_2(sc, URE_PLA_TCR0, URE_MCU_TYPE_PLA, URE_TCR0_AUTO_FIFO);
+
+	ure_reset(sc);
+
+	/* Configure Rx FIFO threshold. */
+	ure_write_4(sc, URE_PLA_RXFIFO_CTRL0, URE_MCU_TYPE_PLA,
+	    URE_RXFIFO_THR1_NORMAL);
+	ure_write_2(sc, URE_PLA_RXFIFO_CTRL1, URE_MCU_TYPE_PLA,
+	    URE_RXFIFO_THR2_NORMAL);
+	ure_write_2(sc, URE_PLA_RXFIFO_CTRL2, URE_MCU_TYPE_PLA,
+	    URE_RXFIFO_THR3_NORMAL);
+
+	/* Configure Tx FIFO threshold. */
+	ure_write_4(sc, URE_PLA_TXFIFO_CTRL, URE_MCU_TYPE_PLA,
+	    URE_TXFIFO_THR_NORMAL2);
+
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		ure_write_4(sc, URE_USB_RX_BUF_TH, URE_MCU_TYPE_USB,
+		    URE_RX_THR_B);
+	}
+
+	/* Enable ALDPS. */
+	ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
+	    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) | URE_EN_ALDPS);
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		reg = ure_read_4(sc, URE_USB_UPS_FLAGS, URE_MCU_TYPE_USB) &
+		    URE_UPS_FLAGS_MASK;
+		ure_write_4(sc, URE_USB_UPS_FLAGS, URE_MCU_TYPE_USB,
+		    reg | URE_UPS_FLAGS_EN_ALDPS);
+	}
+
+	if ((sc->sc_chip & (URE_CHIP_VER_5C20 | URE_CHIP_VER_5C30)) ||
+	    (sc->sc_flags & URE_FLAG_8153B))
+		URE_SETBIT_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB,
+		    URE_U2P3_ENABLE);
+
+	if (sc->sc_flags & URE_FLAG_8153B) {
+		URE_SETBIT_2(sc, URE_USB_LPM_CONFIG, URE_MCU_TYPE_USB,
+		    LPM_U1U2_EN);
+	} else {
+		memset(u1u2, 0xff, sizeof(u1u2));
+		ure_write_mem(sc, URE_USB_TOLERANCE, URE_BYTE_EN_SIX_BYTES,
+		    u1u2, sizeof(u1u2));
+	}
+}
+
+
+static void
+ure_rtl8153_phy_status(struct ure_softc *sc, int enable)
+{
+	uint16_t	reg;
+	int		i;
+
+	for (i = 0; i < 500; i++) {
+		reg = ure_ocp_reg_read(sc, URE_OCP_PHY_STATUS) &
+		    URE_PHY_STAT_MASK;
+		if (enable) {
+			if (reg == URE_PHY_STAT_LAN_ON)
+				break;
+		} else {
+			if (reg == URE_PHY_STAT_LAN_ON ||
+			    reg == URE_PHY_STAT_PWRDN ||
+			    reg == URE_PHY_STAT_EXT_INIT)
+				break;
+		}
+		uether_pause(&sc->sc_ue, hz / 50);
+	}
+	if (i == 500)
 		device_printf(sc->sc_ue.ue_dev,
 		    "timeout waiting for phy to stabilize\n");
+}
 
-	ure_write_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB) &
-	    ~URE_U2P3_ENABLE);
-
-	if (sc->sc_chip & URE_CHIP_VER_5C10) {
-		val = ure_read_2(sc, URE_USB_SSPHYLINK2, URE_MCU_TYPE_USB);
-		val &= ~URE_PWD_DN_SCALE_MASK;
-		val |= URE_PWD_DN_SCALE(96);
-		ure_write_2(sc, URE_USB_SSPHYLINK2, URE_MCU_TYPE_USB, val);
-
-		ure_write_1(sc, URE_USB_USB2PHY, URE_MCU_TYPE_USB,
-		    ure_read_1(sc, URE_USB_USB2PHY, URE_MCU_TYPE_USB) |
-		    URE_USB2PHY_L1 | URE_USB2PHY_SUSPEND);
-	} else if (sc->sc_chip & URE_CHIP_VER_5C20) {
-		ure_write_1(sc, URE_PLA_DMY_REG0, URE_MCU_TYPE_PLA,
-		    ure_read_1(sc, URE_PLA_DMY_REG0, URE_MCU_TYPE_PLA) &
-		    ~URE_ECM_ALDPS);
-	}
-	if (sc->sc_chip & (URE_CHIP_VER_5C20 | URE_CHIP_VER_5C30)) {
-		val = ure_read_1(sc, URE_USB_CSR_DUMMY1, URE_MCU_TYPE_USB);
-		if (ure_read_2(sc, URE_USB_BURST_SIZE, URE_MCU_TYPE_USB) ==
-		    0)
-			val &= ~URE_DYNAMIC_BURST;
-		else
-			val |= URE_DYNAMIC_BURST;
-		ure_write_1(sc, URE_USB_CSR_DUMMY1, URE_MCU_TYPE_USB, val);
-	}
-
-	ure_write_1(sc, URE_USB_CSR_DUMMY2, URE_MCU_TYPE_USB,
-	    ure_read_1(sc, URE_USB_CSR_DUMMY2, URE_MCU_TYPE_USB) |
-	    URE_EP4_FULL_FC);
-
-	ure_write_2(sc, URE_USB_WDT11_CTRL, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_WDT11_CTRL, URE_MCU_TYPE_USB) &
-	    ~URE_TIMER11_EN);
-
-	ure_write_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_LED_FEATURE, URE_MCU_TYPE_PLA) &
-	    ~URE_LED_MODE_MASK);
-
-	if ((sc->sc_chip & URE_CHIP_VER_5C10) &&
-	    usbd_get_speed(sc->sc_ue.ue_udev) != USB_SPEED_SUPER)
-		val = URE_LPM_TIMER_500MS;
-	else
-		val = URE_LPM_TIMER_500US;
-	ure_write_1(sc, URE_USB_LPM_CTRL, URE_MCU_TYPE_USB,
-	    val | URE_FIFO_EMPTY_1FB | URE_ROK_EXIT_LPM);
-
-	val = ure_read_2(sc, URE_USB_AFE_CTRL2, URE_MCU_TYPE_USB);
-	val &= ~URE_SEN_VAL_MASK;
-	val |= URE_SEN_VAL_NORMAL | URE_SEL_RXIDLE;
-	ure_write_2(sc, URE_USB_AFE_CTRL2, URE_MCU_TYPE_USB, val);
-
-	ure_write_2(sc, URE_USB_CONNECT_TIMER, URE_MCU_TYPE_USB, 0x0001);
-
-	ure_write_2(sc, URE_USB_POWER_CUT, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_POWER_CUT, URE_MCU_TYPE_USB) &
-	    ~(URE_PWR_EN | URE_PHASE2_EN));
-	ure_write_2(sc, URE_USB_MISC_0, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_MISC_0, URE_MCU_TYPE_USB) &
-	    ~URE_PCUT_STATUS);
-
-	memset(u1u2, 0xff, sizeof(u1u2));
-	ure_write_mem(sc, URE_USB_TOLERANCE,
-	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
-
-	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL, URE_MCU_TYPE_PLA,
-	    URE_ALDPS_SPDWN_RATIO);
-	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL2, URE_MCU_TYPE_PLA,
-	    URE_EEE_SPDWN_RATIO);
-	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL3, URE_MCU_TYPE_PLA,
-	    URE_PKT_AVAIL_SPDWN_EN | URE_SUSPEND_SPDWN_EN |
-	    URE_U1U2_SPDWN_EN | URE_L1_SPDWN_EN);
-	ure_write_2(sc, URE_PLA_MAC_PWR_CTRL4, URE_MCU_TYPE_PLA,
-	    URE_PWRSAVE_SPDWN_EN | URE_RXDV_SPDWN_EN | URE_TX10MIDLE_EN |
-	    URE_TP100_SPDWN_EN | URE_TP500_SPDWN_EN | URE_TP1000_SPDWN_EN |
-	    URE_EEE_SPDWN_EN);
-
-	val = ure_read_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB);
-	if (!(sc->sc_chip & (URE_CHIP_VER_5C00 | URE_CHIP_VER_5C10)))
-		val |= URE_U2P3_ENABLE;
-	else
-		val &= ~URE_U2P3_ENABLE;
-	ure_write_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, val);
-
-	memset(u1u2, 0x00, sizeof(u1u2));
-	ure_write_mem(sc, URE_USB_TOLERANCE,
-	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
-
-	/* Disable ALDPS. */
-	ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
-	    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) & ~URE_EN_ALDPS);
-	uether_pause(&sc->sc_ue, hz / 50);
-
-	ure_init_fifo(sc);
-
-	/* Enable Rx aggregation. */
-	ure_write_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB,
-	    ure_read_2(sc, URE_USB_USB_CTRL, URE_MCU_TYPE_USB) &
-	    ~URE_RX_AGG_DISABLE);
-
-	val = ure_read_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB);
-	if (!(sc->sc_chip & (URE_CHIP_VER_5C00 | URE_CHIP_VER_5C10)))
-		val |= URE_U2P3_ENABLE;
-	else
-		val &= ~URE_U2P3_ENABLE;
-	ure_write_2(sc, URE_USB_U2P3_CTRL, URE_MCU_TYPE_USB, val);
-
-	memset(u1u2, 0xff, sizeof(u1u2));
-	ure_write_mem(sc, URE_USB_TOLERANCE,
-	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
+static void
+ure_reset_bmu(struct ure_softc *sc)
+{
+	URE_CLRBIT_1(sc, URE_USB_BMU_RESET, URE_MCU_TYPE_USB,
+	    BMU_RESET_EP_IN | BMU_RESET_EP_OUT);
+	URE_SETBIT_1(sc, URE_USB_BMU_RESET, URE_MCU_TYPE_USB,
+	    BMU_RESET_EP_IN | BMU_RESET_EP_OUT);
 }
 
 static void
@@ -1533,125 +1825,17 @@ static void
 ure_disable_teredo(struct ure_softc *sc)
 {
 
-	ure_write_4(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA,
-	    ure_read_4(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA) &
-	    ~(URE_TEREDO_SEL | URE_TEREDO_RS_EVENT_MASK | URE_OOB_TEREDO_EN));
+	if (sc->sc_flags & URE_FLAG_8153B)
+		ure_write_1(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA, 0xff);
+	else {
+		URE_CLRBIT_2(sc, URE_PLA_TEREDO_CFG, URE_MCU_TYPE_PLA,
+		    URE_TEREDO_SEL | URE_TEREDO_RS_EVENT_MASK |
+		    URE_OOB_TEREDO_EN);
+	}
 	ure_write_2(sc, URE_PLA_WDT6_CTRL, URE_MCU_TYPE_PLA,
 	    URE_WDT6_SET_MODE);
 	ure_write_2(sc, URE_PLA_REALWOW_TIMER, URE_MCU_TYPE_PLA, 0);
 	ure_write_4(sc, URE_PLA_TEREDO_TIMER, URE_MCU_TYPE_PLA, 0);
-}
-
-static void
-ure_init_fifo(struct ure_softc *sc)
-{
-	uint32_t rx_fifo1, rx_fifo2;
-	int i;
-
-	ure_write_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_MISC_1, URE_MCU_TYPE_PLA) |
-	    URE_RXDY_GATED_EN);
-
-	ure_disable_teredo(sc);
-
-	DEVPRINTFN(14, sc->sc_ue.ue_dev, "init_fifo: RCR: %#x\n", ure_read_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA));
-	ure_write_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA,
-	    ure_read_4(sc, URE_PLA_RCR, URE_MCU_TYPE_PLA) &
-	    ~URE_RCR_ACPT_ALL);
-
-	if (!(sc->sc_flags & URE_FLAG_8152)) {
-		if (sc->sc_chip & (URE_CHIP_VER_5C00 | URE_CHIP_VER_5C10 |
-		    URE_CHIP_VER_5C20)) {
-				ure_ocp_reg_write(sc, URE_OCP_ADC_CFG,
-				    URE_CKADSEL_L | URE_ADC_EN | URE_EN_EMI_L);
-		}
-		if (sc->sc_chip & URE_CHIP_VER_5C00) {
-			ure_ocp_reg_write(sc, URE_OCP_EEE_CFG,
-			    ure_ocp_reg_read(sc, URE_OCP_EEE_CFG) &
-			    ~URE_CTAP_SHORT_EN);
-		}
-		ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
-		    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) |
-		    URE_EEE_CLKDIV_EN);
-		ure_ocp_reg_write(sc, URE_OCP_DOWN_SPEED,
-		    ure_ocp_reg_read(sc, URE_OCP_DOWN_SPEED) |
-		    URE_EN_10M_BGOFF);
-		ure_ocp_reg_write(sc, URE_OCP_POWER_CFG,
-		    ure_ocp_reg_read(sc, URE_OCP_POWER_CFG) |
-		    URE_EN_10M_PLLOFF);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_ADDR, URE_SRAM_IMPEDANCE);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_DATA, 0x0b13);
-		ure_write_2(sc, URE_PLA_PHY_PWR, URE_MCU_TYPE_PLA,
-		    ure_read_2(sc, URE_PLA_PHY_PWR, URE_MCU_TYPE_PLA) |
-		    URE_PFM_PWM_SWITCH);
-
-		/* Enable LPF corner auto tune. */
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_ADDR, URE_SRAM_LPF_CFG);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_DATA, 0xf70f);
-
-		/* Adjust 10M amplitude. */
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_ADDR, URE_SRAM_10M_AMP1);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_DATA, 0x00af);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_ADDR, URE_SRAM_10M_AMP2);
-		ure_ocp_reg_write(sc, URE_OCP_SRAM_DATA, 0x0208);
-	}
-
-	ure_reset(sc);
-
-	ure_write_1(sc, URE_PLA_CR, URE_MCU_TYPE_PLA, 0);
-
-	ure_write_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA,
-	    ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
-	    ~URE_NOW_IS_OOB);
-
-	ure_write_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA) &
-	    ~URE_MCU_BORW_EN);
-	for (i = 0; i < URE_TIMEOUT; i++) {
-		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
-		    URE_LINK_LIST_READY)
-			break;
-		uether_pause(&sc->sc_ue, hz / 100);
-	}
-	if (i == URE_TIMEOUT)
-		device_printf(sc->sc_ue.ue_dev,
-		    "timeout waiting for OOB control\n");
-	ure_write_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA) |
-	    URE_RE_INIT_LL);
-	for (i = 0; i < URE_TIMEOUT; i++) {
-		if (ure_read_1(sc, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
-		    URE_LINK_LIST_READY)
-			break;
-		uether_pause(&sc->sc_ue, hz / 100);
-	}
-	if (i == URE_TIMEOUT)
-		device_printf(sc->sc_ue.ue_dev,
-		    "timeout waiting for OOB control\n");
-
-	ure_write_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_CPCR, URE_MCU_TYPE_PLA) &
-	    ~URE_CPCR_RX_VLAN);
-	ure_write_2(sc, URE_PLA_TCR0, URE_MCU_TYPE_PLA,
-	    ure_read_2(sc, URE_PLA_TCR0, URE_MCU_TYPE_PLA) |
-	    URE_TCR0_AUTO_FIFO);
-
-	/* Configure Rx FIFO threshold. */
-	ure_write_4(sc, URE_PLA_RXFIFO_CTRL0, URE_MCU_TYPE_PLA,
-	    URE_RXFIFO_THR1_NORMAL);
-	if (usbd_get_speed(sc->sc_ue.ue_udev) == USB_SPEED_FULL) {
-		rx_fifo1 = URE_RXFIFO_THR2_FULL;
-		rx_fifo2 = URE_RXFIFO_THR3_FULL;
-	} else {
-		rx_fifo1 = URE_RXFIFO_THR2_HIGH;
-		rx_fifo2 = URE_RXFIFO_THR3_HIGH;
-	}
-	ure_write_4(sc, URE_PLA_RXFIFO_CTRL1, URE_MCU_TYPE_PLA, rx_fifo1);
-	ure_write_4(sc, URE_PLA_RXFIFO_CTRL2, URE_MCU_TYPE_PLA, rx_fifo2);
-
-	/* Configure Tx FIFO threshold. */
-	ure_write_4(sc, URE_PLA_TXFIFO_CTRL, URE_MCU_TYPE_PLA,
-	    URE_TXFIFO_THR_NORMAL);
 }
 
 /*
