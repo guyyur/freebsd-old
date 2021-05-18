@@ -71,6 +71,7 @@ __FBSDID("$FreeBSD$");
 #include <netinet/in_kdtrace.h>
 #include <net/if_llatbl.h>
 #include <netinet/if_ether.h>
+#include <netinet6/in6_fib.h>
 #include <netinet6/in6_var.h>
 #include <netinet/ip6.h>
 #include <netinet6/ip6_var.h>
@@ -1234,9 +1235,8 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 {
 	struct nd_prefix *pr;
 	struct ifaddr *ifa;
-	struct rt_addrinfo info;
-	struct sockaddr_dl gw;
-	const struct sockaddr *dst6;
+	struct rtentry *rt;
+	struct route_nhop_data rnd;
 
 	/*
 	 * A link-local address is always a neighbor.
@@ -1261,9 +1261,6 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 			return (0);
 	}
 
-	bzero(&info, sizeof(info));
-	info.rti_info[RTAX_GATEWAY] = (struct sockaddr *)&gw;
-
 	/*
 	 * If the address matches one of our addresses,
 	 * it should be a neighbor.
@@ -1276,14 +1273,16 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 	 * interface fib. Query routing table first to ensure deterministic
 	 * lookup time for the cases with large amount of on-link prefixes.
 	 */
-	dst6 = (const struct sockaddr *)addr;
-	if (rib_lookup_info(ifp->if_fib, dst6, 0, 0, &info) == 0) {
-		if (info.rti_ifp == ifp && (info.rti_flags & RTF_GATEWAY) == 0){
+	rt = fib6_lookup_rt(ifp->if_fib, &addr->sin6_addr, 0, NHR_NONE, &rnd);
+	if (rt != NULL) {
+		struct nhop_object *nh = nhop_select_func(rnd.rnd_nhop, 0);
+
+		if (nh->nh_ifp == ifp && nh->gw_sa.sa_family == 0) {
 
 			/*
 			 * Every prefix pointing to the right interface which
 			 *  does not contain gateway is eligible.
-			 * 
+			 *
 			 * This covers both kernel-installed routes (RTF_PINNED)
 			 *  and user-installed routes (RTF_STATIC)
 			 *
@@ -1294,7 +1293,7 @@ nd6_is_new_addr_neighbor(const struct sockaddr_in6 *addr, struct ifnet *ifp)
 			return (1);
 		}
 
-		if (gw.sdl_family == AF_LINK && gw.sdl_index == ifp->if_index) {
+		if (nh->gw_sa.sa_family == AF_LINK && ((struct sockaddr_dl*)&nh->gw_sa)->sdl_index == ifp->if_index) {
 
 			/*
 			 * Loopback route for the interface address from the
