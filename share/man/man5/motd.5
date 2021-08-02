@@ -3,7 +3,7 @@
 .\" This file is in the public domain.
 .\" $FreeBSD$
 .\"
-.Dd July 20, 2019
+.Dd February 13, 1997
 .Dt MOTD 5
 .Os
 .Sh NAME
@@ -11,16 +11,13 @@
 .Nd file containing message(s) of the day
 .Sh DESCRIPTION
 The file
-.Pa /var/run/motd
+.Pa /etc/motd
 is normally displayed by
 .Xr login 1
 after a user has logged in but before the shell is run.
 It is generally used for important system-wide announcements.
 During system startup, a line containing the kernel version string is
-prepended to
-.Pa /etc/motd.template
-and the contents are written to
-.Pa /var/run/motd .
+prepended to this file.
 .Pp
 Individual users may suppress the display of this file by
 creating a file named
@@ -29,13 +26,11 @@ in their home directories or through
 .Xr login.conf 5 .
 .Sh FILES
 .Bl -tag -width $HOME/.hushlogin -compact
-.It Pa /etc/motd.template
-The template file that system administrators can edit.
-.It Pa /var/run/motd
+.It Pa /etc/motd
 The message of the day.
 .It Pa $HOME/.hushlogin
 Suppresses output of
-.Pa /var/run/motd .
+.Pa /etc/motd .
 .El
 .Sh EXAMPLES
 .Bd -literal
@@ -46,9 +41,3 @@ FreeBSD 2.1.6.1-RELEASE (GENERIC) #0: Sun Dec 29 03:08:31 PST 1996
 .Sh SEE ALSO
 .Xr login 1 ,
 .Xr login.conf 5
-.Sh HISTORY
-Prior to
-.Fx 13.0 ,
-.Nm
-lived in
-.Pa /etc .
