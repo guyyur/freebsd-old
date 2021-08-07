@@ -4,7 +4,7 @@
 .include <src.opts.mk>
 .include <src.tools.mk>
 
-CONFS=	fbtab login.conf motd.template login.access
+CONFS=	fbtab login.conf motd login.access
 PROG=	login
 SRCS=	login.c login_fbtab.c
 CFLAGS+=-DLOGALL
