@@ -83,10 +83,13 @@ int
 uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 {
 	struct uart_class *class;
+#ifdef FDT
 	bus_space_handle_t bsh;
 	bus_space_tag_t bst;
 	u_int rclk, shift, iowidth;
-	int br, err;
+	int br;
+#endif
+	int err;
 
 	/* Allow overriding the FDT using the environment. */
 	class = &uart_ns8250_class;
@@ -109,6 +112,7 @@ uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 	if (err != 0)
 		return (err);
 
+#ifdef FDT
 	/*
 	 * Finalize configuration.
 	 */
@@ -125,6 +129,7 @@ uart_cpu_getdev(int devtype, struct uart_devinfo *di)
 	di->bas.bsh = bsh;
 	uart_bus_space_mem = di->bas.bst;
 	uart_bus_space_io = NULL;
+#endif
 
 	return (0);
 }
