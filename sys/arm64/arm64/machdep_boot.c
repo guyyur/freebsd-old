@@ -53,7 +53,9 @@ __FBSDID("$FreeBSD$");
 
 extern int *end;
 static char *loader_envp;
+#ifdef FDT
 static char static_kenv[4096];
+#endif
 
 #ifdef FDT
 #define	CMDLINE_GUARD "FreeBSD:"
