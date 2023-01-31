@@ -11,7 +11,7 @@
 .Nd file containing message(s) of the day
 .Sh DESCRIPTION
 The file
-.Pa /var/run/motd
+.Pa /var/db/motd
 is normally displayed by
 .Xr login 1
 after a user has logged in but before the shell is run.
@@ -20,9 +20,9 @@ During system startup, a line containing the kernel version string is
 prepended to
 .Pa /etc/motd.template
 and the contents are written to
-.Pa /var/run/motd .
+.Pa /var/db/motd .
 .Pp
-.Pa /var/run/motd
+.Pa /var/db/motd
 can be updated without a system reboot by manually restarting the
 motd service after updating
 .Pa /etc/motd.template :
@@ -39,11 +39,11 @@ in their home directories or through
 .Bl -tag -width $HOME/.hushlogin -compact
 .It Pa /etc/motd.template
 The template file that system administrators can edit.
-.It Pa /var/run/motd
+.It Pa /var/db/motd
 The message of the day.
 .It Pa $HOME/.hushlogin
 Suppresses output of
-.Pa /var/run/motd .
+.Pa /var/db/motd .
 .El
 .Sh EXAMPLES
 .Bd -literal

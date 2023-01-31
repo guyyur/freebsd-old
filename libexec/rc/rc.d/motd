@@ -10,19 +10,19 @@
 . /etc/rc.subr
 
 name="motd"
-desc="Update /var/run/motd"
+desc="Update /var/db/motd"
 rcvar="update_motd"
 start_cmd="motd_start"
 stop_cmd=":"
 
 COMPAT_MOTD="/etc/motd"
-TARGET="/var/run/motd"
+TARGET="/var/db/motd"
 TEMPLATE="/etc/motd.template"
 PERMS="644"
 
 motd_start()
 {
-	#	Update kernel info in /var/run/motd
+	#	Update kernel info in /var/db/motd
 	#	Must be done *before* interactive logins are possible
 	#	to prevent possible race conditions.
 	#
